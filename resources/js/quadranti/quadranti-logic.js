@@ -60,7 +60,7 @@ export class QuadrantiLogic {
     async fetchEphemerisData(geoArea, date) {
         try {
             const response = await $.ajax({
-                url: ($('meta[name="base-url"]').attr('content') || '') + '/user/quadranti/coordinates',
+                url: ($('meta[name="base-url"]').attr('content') || '') + '/quadranti/coordinates',
                 type: 'POST',
                 dataType: 'json',
                 headers: {

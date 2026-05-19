@@ -1,0 +1,34 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Forza HTTPS se disponibile
+    RewriteCond %{HTTPS} off
+    RewriteCond %{HTTP:X-Forwarded-Proto} !https
+    RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+
+ # Rimuovi /public dall'URL se presente
+    RewriteCond %{THE_REQUEST} /public/([^\s?]*) [NC]
+    RewriteRule ^ /%1 [L,NE,R=301]
+
+    # Previeni accesso diretto alle cartelle Laravel
+    RewriteRule ^(app|bootstrap|config|database|resources|routes|storage|tests|vendor)/.*$ - [F,L]
+
+    # Reindirizza tutto alla cartella public
+    RewriteCond %{REQUEST_URI} !^/public/
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
+
+# Disabilita visualizzazione indici directory
+Options -Indexes
+
+# Proteggi file dotfile e config
+<FilesMatch "^\.">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+<FilesMatch "\.(env|json|lock|md|xml|yml|yaml)$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>

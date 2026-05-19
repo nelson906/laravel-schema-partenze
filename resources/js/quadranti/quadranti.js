@@ -478,7 +478,7 @@ $('#first_table').on('click', '.qd-remove', (e) => this.handleRemovePlayer(e));
 
     try {
       const response = await $.ajax({
-        url: ($('meta[name="base-url"]').attr('content') || '') + '/user/quadranti/upload-excel',
+        url: ($('meta[name="base-url"]').attr('content') || '') + '/quadranti/upload-excel',
         type: 'POST',
         data: formData,
         processData: false,

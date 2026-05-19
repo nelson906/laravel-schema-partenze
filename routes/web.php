@@ -19,4 +19,8 @@ Route::middleware('auth')->group(function () {
 
 require __DIR__.'/quadranti.php';
 
+require __DIR__.'/admin.php';
+
+require __DIR__.'/maintenance.php';
+
 require __DIR__.'/auth.php';

@@ -9,11 +9,28 @@
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                 <div class="p-6 text-gray-900 space-y-4">
-                    <p class="text-lg">Benvenuto. Apri il simulatore Quadranti:</p>
-                    <a href="{{ route('quadranti.index') }}"
-                       class="inline-block bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-6 rounded-md">
-                        <i class="fas fa-clock mr-2"></i> Apri Simulatore Tempi di Partenza
-                    </a>
+                    <p class="text-lg">Benvenuto. Azioni disponibili:</p>
+
+                    <div class="flex flex-wrap gap-3">
+                        <a href="{{ route('quadranti.index') }}"
+                           class="inline-block bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-6 rounded-md">
+                            <i class="fas fa-clock mr-2"></i> Apri Simulazione Partenze
+                        </a>
+
+                        @if (auth()->user()->isAdmin())
+                            <a href="{{ route('admin.users.index') }}"
+                               class="inline-block bg-slate-600 hover:bg-slate-700 text-white font-medium py-3 px-6 rounded-md">
+                                <i class="fas fa-users mr-2"></i> Gestione Utenti
+                            </a>
+                        @endif
+
+                        @if (auth()->user()->isSuperAdmin())
+                            <a href="{{ route('aruba.admin.dashboard') }}"
+                               class="inline-block bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-3 px-6 rounded-md">
+                                <i class="fas fa-tools mr-2"></i> Aruba Admin
+                            </a>
+                        @endif
+                    </div>
                 </div>
             </div>
         </div>
