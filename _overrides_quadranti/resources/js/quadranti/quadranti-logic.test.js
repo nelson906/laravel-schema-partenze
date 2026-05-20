@@ -1108,6 +1108,228 @@ describe('generateDoubleTee — giro finale 54 buche', () => {
   });
 });
 
+// ─── Striscia FIG (primo/ultimo numero per quadrante) ───────────────────────
+// generateDoubleTee/generateSingleTee popolano this.figQuadranti come
+// side-effect. quadrantRange estrae { first, last }; generateFigStrip
+// produce il box HTML con etichetta INVERTIRE per i quadranti decrescenti.
+describe('Striscia FIG — quadrantRange / figQuadranti / generateFigStrip', () => {
+  let logic;
+  beforeEach(() => {
+    resetPlayerStorage();
+    logic = makeLogic();
+  });
+
+  describe('quadrantRange', () => {
+    it('quadrante vuoto o non-array → null', () => {
+      expect(logic.quadrantRange([])).toBeNull();
+      expect(logic.quadrantRange(null)).toBeNull();
+      expect(logic.quadrantRange(undefined)).toBeNull();
+    });
+
+    it('estrae first dal primo gruppo e last dall’ultimo (numerico)', () => {
+      const groups = [
+        { players: [10, 11, 12] },
+        { players: [13, 14, 15] },
+        { players: [16, 17, 18] },
+      ];
+      const r = logic.quadrantRange(groups);
+      expect(r.first).toBe(10);
+      expect(r.last).toBe(18);
+    });
+
+    it('last salta le celle vuote dell’ultimo gruppo (gruppo incompleto)', () => {
+      const groups = [
+        { players: [1, 2, 3] },
+        { players: [4, '', ''] },
+      ];
+      const r = logic.quadrantRange(groups);
+      expect(r.first).toBe(1);
+      expect(r.last).toBe(4);
+    });
+
+    it('ordine decrescente: first > last', () => {
+      const groups = [
+        { players: [45, 44, 43] },
+        { players: [3, 2, 1] },
+      ];
+      const r = logic.quadrantRange(groups);
+      expect(r.first).toBe(45);
+      expect(r.last).toBe(1);
+    });
+
+    it('[BUG Q2] ultimo flight crescente in quadrante decrescente → last = estremo lontano', () => {
+      // Q2 decrescente: flight [34,35,36] ... [1,2,3]. L'ultimo numero del
+      // quadrante è 1 (più distante da first=34), NON 3 (ultima cella).
+      const q2 = [
+        { players: [34, 35, 36] },
+        { players: [31, 32, 33] },
+        { players: [1, 2, 3] },
+      ];
+      const r = logic.quadrantRange(q2);
+      expect(r.first).toBe(34);
+      expect(r.last).toBe(1);
+    });
+
+    it('quadrante crescente con ultimo flight crescente → last = massimo', () => {
+      // Q1 crescente: [37,38,39] ... [70,71,72] → last = 72
+      const q1 = [
+        { players: [37, 38, 39] },
+        { players: [70, 71, 72] },
+      ];
+      const r = logic.quadrantRange(q1);
+      expect(r.first).toBe(37);
+      expect(r.last).toBe(72);
+    });
+
+    it('quadrante decrescente con ultimo flight decrescente → last = minimo', () => {
+      // Q3 decrescente: [142,141,140] ... [113,112,111] → last = 111
+      const q3 = [
+        { players: [142, 141, 140] },
+        { players: [113, 112, 111] },
+      ];
+      const r = logic.quadrantRange(q3);
+      expect(r.first).toBe(142);
+      expect(r.last).toBe(111);
+    });
+
+    it('in modalità nominativa usa playerIndices+1 come numero', () => {
+      const groups = [
+        { players: ['Rossi', 'Bianchi', 'Verdi'], playerIndices: [0, 1, 2] },
+        { players: ['Neri', 'Gialli', 'Blu'],     playerIndices: [3, 4, 5] },
+      ];
+      const r = logic.quadrantRange(groups);
+      expect(r.first).toBe(1);  // indice 0 + 1
+      expect(r.last).toBe(6);   // indice 5 + 1
+    });
+  });
+
+  describe('pushFigQuadrante', () => {
+    it('non aggiunge nulla per quadrante vuoto', () => {
+      logic.figQuadranti = [];
+      logic.pushFigQuadrante('Uomini', 'Q1', []);
+      expect(logic.figQuadranti).toHaveLength(0);
+    });
+
+    it('aggiunge voce con invertire=false per ordine crescente', () => {
+      logic.figQuadranti = [];
+      logic.pushFigQuadrante('Uomini', 'Q1', [
+        { players: [1, 2, 3] }, { players: [4, 5, 6] },
+      ]);
+      expect(logic.figQuadranti).toHaveLength(1);
+      expect(logic.figQuadranti[0]).toMatchObject({
+        categoria: 'Uomini', label: 'Q1', first: 1, last: 6, invertire: false,
+      });
+    });
+
+    it('invertire=true per ordine decrescente (45→1)', () => {
+      logic.figQuadranti = [];
+      logic.pushFigQuadrante('Uomini', 'Q2', [
+        { players: [45, 44, 43] }, { players: [3, 2, 1] },
+      ]);
+      expect(logic.figQuadranti[0].invertire).toBe(true);
+    });
+  });
+
+  describe('figQuadranti popolato da generateDoubleTee (giro normale)', () => {
+    it('144U + 48D, prima giornata → 8 quadranti (4 U + 4 D) con first/last', () => {
+      const l = makeLogic({
+        players: 144, proette: 48, playersPerFlight: 3,
+        garaNT: 'Gara 54 buche', doppiePartenze: 'Doppie Partenze',
+        nominativo: 'Off', startTime: '08:00', gap: '00:10', round: '04:30',
+      });
+      l.generateDoubleTee('prima');
+      expect(Array.isArray(l.figQuadranti)).toBe(true);
+      // Tutte le voci hanno la struttura attesa
+      l.figQuadranti.forEach((q) => {
+        expect(q).toHaveProperty('categoria');
+        expect(q).toHaveProperty('label');
+        expect(typeof q.first).toBe('number');
+        expect(typeof q.last).toBe('number');
+        expect(typeof q.invertire).toBe('boolean');
+      });
+      // Ci sono sia voci Uomini sia Donne
+      expect(l.figQuadranti.some(q => q.categoria === 'Uomini')).toBe(true);
+      expect(l.figQuadranti.some(q => q.categoria === 'Donne')).toBe(true);
+    });
+  });
+
+  describe('figQuadranti popolato dal giro finale doppio tee', () => {
+    it('54U + 27D → quadranti Uomini Tee1/Tee10 e Donne Tee1/Tee10', () => {
+      const l = makeLogic({
+        players: 144, proette: 48, playersCut: 54, proetteCut: 27,
+        playersPerFlight: 3, garaNT: 'Gara 54 buche',
+        doppiePartenze: 'Doppie Partenze', nominativo: 'Off',
+        startTime: '08:00', gap: '00:11', round: '04:30',
+      });
+      l.generateDoubleTee('finale');
+      const labels = l.figQuadranti.map(q => `${q.categoria} ${q.label}`);
+      expect(labels).toContain('Uomini Q1 · Tee 1');
+      expect(labels).toContain('Uomini Q2 · Tee 10');
+      expect(labels).toContain('Donne Q1 · Tee 1');
+      expect(labels).toContain('Donne Q2 · Tee 10');
+    });
+  });
+
+  describe('figQuadranti popolato dal giro finale tee unico (3 blocchi)', () => {
+    it('54U + 27D → blocco 1, blocco 2 (donne), blocco 3', () => {
+      const l = makeLogic({
+        players: 144, proette: 48, playersCut: 54, proetteCut: 27,
+        playersPerFlight: 3, garaNT: 'Gara 54 buche',
+        doppiePartenze: 'Tee Unico', nominativo: 'Off',
+        startTime: '08:00', gap: '00:11', round: '04:30',
+      });
+      l.generateSingleTee('finale');
+      const labels = l.figQuadranti.map(q => q.label);
+      expect(labels).toContain('Blocco 1 · back-half');
+      expect(labels).toContain('Blocco 2');
+      expect(labels).toContain('Blocco 3 · front-half');
+    });
+  });
+
+  describe('generateFigStrip (HTML)', () => {
+    it('ritorna stringa vuota se figQuadranti è vuoto', () => {
+      logic.figQuadranti = [];
+      expect(logic.generateFigStrip()).toBe('');
+    });
+
+    it('produce il box con titolo, voci e pulsante copia', () => {
+      logic.figQuadranti = [
+        { categoria: 'Uomini', label: 'Q1', first: 1, last: 27, invertire: false },
+        { categoria: 'Uomini', label: 'Q2', first: 45, last: 1, invertire: true },
+      ];
+      const html = logic.generateFigStrip();
+      expect(html).toContain('Striscia per sistema FIG');
+      expect(html).toContain('fig-strip-copy');
+      expect(html).toContain('1 &rarr; 27');
+      expect(html).toContain('45 &rarr; 1');
+      // Solo il quadrante decrescente ha il badge INVERTIRE.
+      // Conto il badge specifico (>INVERTIRE</span>), non le altre
+      // occorrenze (nota esplicativa, data-strip del pulsante copia).
+      expect((html.match(/>INVERTIRE<\/span>/g) || []).length).toBe(1);
+    });
+
+    it('separa le categorie Uomini e Donne', () => {
+      logic.figQuadranti = [
+        { categoria: 'Uomini', label: 'Q1', first: 1, last: 27, invertire: false },
+        { categoria: 'Donne',  label: 'Q1', first: 1, last: 15, invertire: false },
+      ];
+      const html = logic.generateFigStrip();
+      expect(html).toContain('Uomini');
+      expect(html).toContain('Donne');
+    });
+
+    it('il testo del pulsante copia (data-strip) elenca tutti i quadranti', () => {
+      logic.figQuadranti = [
+        { categoria: 'Uomini', label: 'Q1', first: 1, last: 27, invertire: false },
+        { categoria: 'Uomini', label: 'Q2', first: 45, last: 1, invertire: true },
+      ];
+      const html = logic.generateFigStrip();
+      expect(html).toContain('Uomini Q1: 1 → 27');
+      expect(html).toContain('Uomini Q2: 45 → 1');
+    });
+  });
+});
+
 // ─── REGRESSIONE: normalizeGaraTitle (raggruppamento dropdown M+F) ───────────
 // Bug: la regex /\s*(MASCHILE|FEMMINILE)\s*/gi non gestiva la punteggiatura
 // attorno alla parola-chiave. Conseguenza: gare M ed F dello stesso evento con

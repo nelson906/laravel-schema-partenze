@@ -491,6 +491,13 @@ export class QuadrantiLogic {
       const femTee1   = proetteFinal > 0 ? descGroups(frontWomen, 'F') : [];
       const femTee10  = proetteFinal > 0 ? ascGroups(backWomen, 'F')  : [];
 
+      // Striscia FIG: primo/ultimo numero per quadrante (giro finale doppio tee)
+      this.figQuadranti = [];
+      this.pushFigQuadrante('Uomini', 'Q1 · Tee 1',  maleTee1);
+      this.pushFigQuadrante('Uomini', 'Q2 · Tee 10', maleTee10);
+      this.pushFigQuadrante('Donne',  'Q1 · Tee 1',  femTee1);
+      this.pushFigQuadrante('Donne',  'Q2 · Tee 10', femTee10);
+
       const gap = this.config.gap;
       const startTime = this.config.startTime;
 
@@ -576,6 +583,16 @@ export class QuadrantiLogic {
 
     // Calcola gli uomini applicando il constraint
     const maleGroups = (players > 0) ? this.generatePlayerGroups(players, mod, atleti, 'M', maleMaxEarlySlots) : [];
+
+        // Striscia FIG: primo/ultimo numero per quadrante (giro normale doppio tee).
+        // Q1-Q4 sono i quadranti restituiti da generatePlayerGroups.
+        this.figQuadranti = [];
+        ['Q1', 'Q2', 'Q3', 'Q4'].forEach((q) => {
+            this.pushFigQuadrante('Uomini', q, maleGroups.filter(g => g.quadrant === q));
+        });
+        ['Q1', 'Q2', 'Q3', 'Q4'].forEach((q) => {
+            this.pushFigQuadrante('Donne', q, femaleGroups.filter(g => g.quadrant === q));
+        });
 
         // Filter groups by type
         const maleEarlyGroups = maleGroups.filter(g => g.type === 'Early');
@@ -1228,6 +1245,149 @@ export class QuadrantiLogic {
         return header;
     }
 
+    /* ════════════════════════════════════════════════════════════════════
+     * STRISCIA FIG — estrazione primo/ultimo numero per quadrante.
+     *
+     * Il sistema FIG richiede, per ogni quadrante, il range dei giocatori.
+     * Questi metodi producono una "striscia" leggibile: per ogni quadrante
+     * il primo e l'ultimo numero così come appaiono in tabella. Se il
+     * quadrante è in ordine decrescente (primo > ultimo) viene segnalato
+     * con l'etichetta "INVERTIRE" (i terzetti vanno invertiti nel FIG).
+     * ════════════════════════════════════════════════════════════════════ */
+
+    /**
+     * Estrae il numero "FIG" di un giocatore dentro un gruppo alla posizione j.
+     * In modalità nominativa usa playerIndices (posizione in classifica + 1);
+     * altrimenti i players sono già numeri.
+     */
+    figPlayerNumber(group, j) {
+        if (group.playerIndices && group.playerIndices[j] != null) {
+            return group.playerIndices[j] + 1;
+        }
+        return group.players[j];
+    }
+
+    /**
+     * Calcola { first, last } di un quadrante (lista di gruppi in ordine di
+     * display).
+     *
+     *   first = prima cella del primo gruppo (numero in alto a sinistra).
+     *   last  = numero dell'ULTIMO gruppo più distante da first, cioè
+     *           l'estremo del range. Per un quadrante crescente è il massimo
+     *           dell'ultimo terzetto, per uno decrescente il minimo.
+     *
+     * Motivo del "più distante": l'ultimo terzetto può essere crescente o
+     * decrescente al suo interno indipendentemente dalla direzione del
+     * quadrante. Es. quadrante decrescente con ultimo flight [1,2,3]: l'ultimo
+     * numero del quadrante è 1 (il più lontano da first), non 3.
+     *
+     * Ritorna null se il quadrante è vuoto.
+     */
+    quadrantRange(groups) {
+        if (!Array.isArray(groups) || groups.length === 0) return null;
+
+        const firstGroup = groups[0];
+        const lastGroup = groups[groups.length - 1];
+
+        const first = this.figPlayerNumber(firstGroup, 0);
+        if (first == null) return null;
+
+        let last = null;
+        let maxDist = -1;
+        for (let j = 0; j < lastGroup.players.length; j++) {
+            const p = lastGroup.players[j];
+            if (p === '' || p == null) continue;
+            const num = this.figPlayerNumber(lastGroup, j);
+            const dist = Math.abs(Number(num) - Number(first));
+            if (dist > maxDist) {
+                maxDist = dist;
+                last = num;
+            }
+        }
+        if (last == null) return null;
+
+        return { first, last };
+    }
+
+    /**
+     * Aggiunge una voce a this.figQuadranti se il quadrante non è vuoto.
+     * invertire = true quando l'ordine è decrescente (first > last).
+     */
+    pushFigQuadrante(categoria, label, groups) {
+        const r = this.quadrantRange(groups);
+        if (!r) return;
+        this.figQuadranti.push({
+            categoria,
+            label,
+            first: r.first,
+            last: r.last,
+            invertire: Number(r.first) > Number(r.last),
+        });
+    }
+
+    /**
+     * Genera l'HTML del box "Striscia per sistema FIG".
+     * Legge this.figQuadranti popolato da generateDoubleTee/generateSingleTee.
+     * Ritorna stringa vuota se non ci sono quadranti.
+     */
+    generateFigStrip() {
+        const quad = this.figQuadranti || [];
+        if (quad.length === 0) return '';
+
+        // Raggruppa per categoria mantenendo l'ordine di inserimento
+        const categorie = [];
+        quad.forEach((q) => {
+            let bucket = categorie.find(c => c.nome === q.categoria);
+            if (!bucket) {
+                bucket = { nome: q.categoria, voci: [] };
+                categorie.push(bucket);
+            }
+            bucket.voci.push(q);
+        });
+
+        // Testo piatto per il pulsante "Copia" (una riga per quadrante)
+        const plain = quad
+            .map(q => `${q.categoria} ${q.label}: ${q.first} → ${q.last}${q.invertire ? '  INVERTIRE' : ''}`)
+            .join('\n');
+
+        let html = `
+        <div id="fig-strip-box" style="margin-top:20px; padding:15px; background:#eef2ff; border:1px solid #c7d2fe; border-radius:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <strong style="color:#3730a3; font-size:15px;">
+              <i class="fas fa-list-ol mr-1"></i> Striscia per sistema FIG
+            </strong>
+            <button type="button" id="fig-strip-copy"
+              class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white py-1 px-3 rounded"
+              data-strip="${plain.replace(/"/g, '&quot;')}">
+              Copia
+            </button>
+          </div>`;
+
+        categorie.forEach((cat) => {
+            html += `<div style="margin-bottom:8px;">
+              <div style="font-weight:600; font-size:13px; color:#1e293b; margin-bottom:4px;">${cat.nome}</div>
+              <div style="display:flex; flex-wrap:wrap; gap:8px;">`;
+            cat.voci.forEach((v) => {
+                const invBadge = v.invertire
+                    ? ` <span style="background:#dc2626; color:#fff; font-size:10px; font-weight:700; padding:1px 6px; border-radius:4px; margin-left:6px;">INVERTIRE</span>`
+                    : '';
+                html += `<span style="background:#fff; border:1px solid #c7d2fe; border-radius:6px; padding:4px 10px; font-size:13px;">
+                  <span style="color:#64748b;">${v.label}:</span>
+                  <strong style="color:#0f172a;">${v.first} &rarr; ${v.last}</strong>${invBadge}
+                </span>`;
+            });
+            html += `</div></div>`;
+        });
+
+        html += `
+          <div style="font-size:11px; color:#64748b; margin-top:8px;">
+            "INVERTIRE" = quadrante in ordine decrescente: invertire i numeri all'interno di ogni terzetto.
+          </div>
+        </div>`;
+
+        return html;
+    }
+
     /**
      * Generates single tee configuration
      *
@@ -1325,11 +1485,26 @@ export class QuadrantiLogic {
             allGroups = [...block1, ...block2, ...block3];
             if (block1.length > 0) blockBoundaries.add(block1.length - 1);
             if (block2.length > 0) blockBoundaries.add(block1.length + block2.length - 1);
+
+            // Striscia FIG: il giro finale tee unico ha 3 blocchi sequenziali
+            this.figQuadranti = [];
+            this.pushFigQuadrante('Uomini', 'Blocco 1 · back-half', block1);
+            this.pushFigQuadrante('Donne',  'Blocco 2',            block2);
+            this.pushFigQuadrante('Uomini', 'Blocco 3 · front-half', block3);
         } else {
             // Giri normali (prima/seconda) — comportamento storico invariato
             const { atleti, atlete } = this.getPlayerArrays();
             const maleGroups = this.generatePlayerGroups(players, mod, atleti, 'M');
             const femaleGroups = proette > 0 ? this.generatePlayerGroups(proette, mod, atlete, 'F') : [];
+
+            // Striscia FIG: tee unico, quadranti Q1-Q4 da generatePlayerGroups
+            this.figQuadranti = [];
+            ['Q1', 'Q2', 'Q3', 'Q4'].forEach((q) => {
+                this.pushFigQuadrante('Uomini', q, maleGroups.filter(g => g.quadrant === q));
+            });
+            ['Q1', 'Q2', 'Q3', 'Q4'].forEach((q) => {
+                this.pushFigQuadrante('Donne', q, femaleGroups.filter(g => g.quadrant === q));
+            });
 
             allGroups = round === ROUND_TYPES.FIRST
                 ? [...femaleGroups, ...maleGroups]

@@ -235,6 +235,25 @@ $('#federgolf-gare-select').on('change', () => this.handleFedergolfGaraSelected(
 // e i pulsanti × vengono ricreati a ogni render.
 $('#first_table').on('click', '.qd-remove', (e) => this.handleRemovePlayer(e));
 
+// Copia la striscia FIG negli appunti. Delegato perché #fig-strip-copy
+// viene ricreato a ogni render di generateFigStrip().
+$('#fig-strip').on('click', '#fig-strip-copy', (e) => {
+  const $btn = $(e.currentTarget);
+  const text = $btn.data('strip') || '';
+  const done = () => {
+    const orig = $btn.text();
+    $btn.text('Copiato!');
+    setTimeout(() => $btn.text(orig), 1500);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => {
+      window.prompt('Copia la striscia FIG:', text);
+    });
+  } else {
+    window.prompt('Copia la striscia FIG:', text);
+  }
+});
+
   }
 
   /**
@@ -608,6 +627,10 @@ $('#first_table').on('click', '.qd-remove', (e) => this.handleRemovePlayer(e));
     }
 
     $('#first_table').html(html);
+
+    // Striscia FIG: generateDoubleTee/generateSingleTee hanno popolato
+    // this.logic.figQuadranti come side-effect; ora ne rendiamo il box.
+    $('#fig-strip').html(this.logic.generateFigStrip());
   }
 
 /**
