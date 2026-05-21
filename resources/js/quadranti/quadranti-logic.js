@@ -59,8 +59,13 @@ export class QuadrantiLogic {
      */
     async fetchEphemerisData(geoArea, date) {
         try {
+            // L'URL è iniettato dalla view via meta tag (route() di Laravel),
+            // così quadranti-logic.js resta identico tra progetti con prefissi
+            // di route diversi. Fallback al vecchio path per retrocompatibilità.
+            const coordUrl = $('meta[name="quadranti-coordinates-url"]').attr('content')
+                || (($('meta[name="base-url"]').attr('content') || '') + '/user/quadranti/coordinates');
             const response = await $.ajax({
-                url: ($('meta[name="base-url"]').attr('content') || '') + '/user/quadranti/coordinates',
+                url: coordUrl,
                 type: 'POST',
                 dataType: 'json',
                 headers: {
@@ -436,6 +441,9 @@ export class QuadrantiLogic {
     const proette = parseInt(this.config.proette) || 0;
     const garaNT = this.config.garaNT;
 
+    // Reset buffer Vista FIG: buildGroupTableRows lo riempie durante il render.
+    this._figFlightsBuffer = [];
+
     // GIRO FINALE 54 buche: layout dedicato (immagine 1).
     // - Uomini Tee 1 = front-half (rank 1..frontM) decrescente, leader 1,2,3 ultimi
     // - Uomini Tee 10 = back-half (rank frontM+1..N) crescente, worst ultimi
@@ -562,6 +570,7 @@ export class QuadrantiLogic {
       </div>
     `;
 
+      this.figFlights = this._figFlightsBuffer;
       return infoHTML + `<table>${bodyHtml}</table>`;
     }
 
@@ -638,6 +647,7 @@ export class QuadrantiLogic {
       </div>
     `;
 
+        this.figFlights = this._figFlightsBuffer;
         return infoHTML + `<table>${tableHTML}</table>`;
     }
 
@@ -1185,6 +1195,11 @@ export class QuadrantiLogic {
 
         const maxGroups = Math.max(leftGroups.length, rightGroups.length);
 
+        // Buffer per la Vista FIG: registra ogni flight renderizzato con
+        // orario e tee. Popolato come side-effect (non altera l'HTML).
+        // generateDoubleTee resetta/consuma this._figFlightsBuffer.
+        if (!Array.isArray(this._figFlightsBuffer)) this._figFlightsBuffer = [];
+
         for (let i = 0; i < maxGroups; i++) {
             html += '<tr>';
 
@@ -1196,6 +1211,7 @@ export class QuadrantiLogic {
                 for (let j = 0; j < mod; j++) {
                     html += renderCell(leftGroups[i], j);
                 }
+                this._figFlightsBuffer.push({ group: leftGroups[i], ora: currentTime, tee: 1, category });
             } else {
                 html += `<td colspan="${mod + 2}" class="text-center px-2 py-1 border border-gray-300"></td>`;
             }
@@ -1211,6 +1227,7 @@ export class QuadrantiLogic {
 
                 html += '<td class="text-center px-2 py-1 border border-gray-300 font-medium">10</td>';
                 html += `<td class="text-center px-2 py-1 border border-gray-300 font-medium" style="background-color:${rightBg}">${matchNumber++}</td>`;
+                this._figFlightsBuffer.push({ group: rightGroups[i], ora: currentTime, tee: 10, category });
             } else {
                 html += `<td colspan="${mod + 2}" class="text-center px-2 py-1 border border-gray-300"></td>`;
             }
@@ -1384,6 +1401,182 @@ export class QuadrantiLogic {
             "INVERTIRE" = quadrante in ordine decrescente: invertire i numeri all'interno di ogni terzetto.
           </div>
         </div>`;
+
+        return html;
+    }
+
+    /* ════════════════════════════════════════════════════════════════════
+     * VISTA FIG — tabella Giro 1 + Giro 2 affiancati, nel layout dell'orario
+     * ufficiale FIG (vedi PDF "Orario di partenza giro 1 e giro 2").
+     *
+     * Per ogni flight mostra Match/Ora/Tee del giro 1 e del giro 2 (con la
+     * rotazione), così da poter confrontare a vista con il PDF ufficiale.
+     * ════════════════════════════════════════════════════════════════════ */
+
+    /**
+     * Estrae i numeri "FIG" di tutti i giocatori di un gruppo (salta i vuoti).
+     */
+    figGroupNumbers(group) {
+        const nums = [];
+        for (let j = 0; j < group.players.length; j++) {
+            const p = group.players[j];
+            if (p === '' || p == null) continue;
+            nums.push(this.figPlayerNumber(group, j));
+        }
+        return nums;
+    }
+
+    /**
+     * Etichette dei giocatori di un gruppo COSÌ COME VANNO MOSTRATE: i nomi
+     * se caricati (modalità nominativo), altrimenti i numeri. Salta i vuoti.
+     * Usato dalla Vista FIG per assomigliare all'orario ufficiale (che ha i nomi).
+     */
+    figGroupLabels(group) {
+        const out = [];
+        for (let j = 0; j < group.players.length; j++) {
+            const p = group.players[j];
+            if (p === '' || p == null) continue;
+            out.push(p);
+        }
+        return out;
+    }
+
+    /**
+     * Chiave univoca di un flight, stabile tra Giro 1 e Giro 2 e indipendente
+     * dalla modalità (nominativo/numerico). Usa playerIndices (indici nella
+     * lista iscritti) quando disponibili, altrimenti i players grezzi.
+     */
+    figFlightKey(f) {
+        const g = f.group;
+        let ids;
+        if (g.playerIndices && g.playerIndices.length) {
+            ids = g.playerIndices.slice().sort((a, b) => a - b);
+        } else {
+            ids = g.players.filter((p) => p !== '' && p != null).slice().sort();
+        }
+        return f.category + '|' + ids.join(',');
+    }
+
+    /**
+     * Genera l'HTML della Vista FIG: tabella combinata Giro 1 + Giro 2.
+     *
+     * Funzionamento:
+     *   1. Genera generateDoubleTee('prima') e ('seconda'); ciascuna popola
+     *      this.figFlights con i flight renderizzati (group, ora, tee, cat).
+     *   2. Accoppia i flight delle due giornate per insieme di giocatori.
+     *   3. Rinumera i match in stile FIG: Tee 1 prima (ordinati per ora),
+     *      poi Tee 10. Numerazione indipendente per Giro 1 e Giro 2.
+     *   4. Rende una tabella per categoria (Uomini, Donne), righe ordinate
+     *      per match del Giro 1.
+     *
+     * @returns {string} HTML della Vista FIG (o messaggio se non disponibile)
+     */
+    generateFigComparison() {
+        // Preserva figQuadranti: generateDoubleTee lo sovrascrive.
+        const savedFigQuadranti = this.figQuadranti;
+
+        this.generateDoubleTee(ROUND_TYPES.FIRST);
+        const flights1 = (this.figFlights || []).slice();
+        this.generateDoubleTee(ROUND_TYPES.SECOND);
+        const flights2 = (this.figFlights || []).slice();
+
+        this.figQuadranti = savedFigQuadranti;
+
+        if (flights1.length === 0) {
+            return '<p style="padding:20px; color:#64748b;">Nessun flight da mostrare. Imposta giocatori e configurazione Doppie Partenze.</p>';
+        }
+
+        // Minuti da "HH:MM" per ordinamento orari
+        const toMin = (t) => {
+            const [h, m] = String(t).split(':').map(Number);
+            return h * 60 + m;
+        };
+        const keyOf = (f) => this.figFlightKey(f);
+
+        // Rinumera i match in stile FIG. IMPORTANTE: la FIG tratta la gara
+        // maschile e quella femminile come DUE gare separate, ognuna con la
+        // propria numerazione che riparte da 1. Quindi numeriamo per categoria.
+        // Ordine: Tee 1 prima (per ora), poi Tee 10.
+        const assignMatches = (flights) => {
+            const map = {};
+            ['M', 'F'].forEach((cat) => {
+                flights
+                    .filter((f) => f.category === cat)
+                    .slice()
+                    .sort((a, b) => (a.tee - b.tee) || (toMin(a.ora) - toMin(b.ora)))
+                    .forEach((f, i) => { map[keyOf(f)] = i + 1; });
+            });
+            return map;
+        };
+
+        const match1 = assignMatches(flights1);
+        const match2 = assignMatches(flights2);
+
+        // Indicizza giorno 2 per chiave
+        const g2byKey = {};
+        flights2.forEach((f) => { g2byKey[keyOf(f)] = f; });
+
+        // Costruisce le righe combinate. I "giocatori" sono le etichette così
+        // come vanno mostrate: nomi se caricati, altrimenti numeri.
+        const righe = flights1.map((f1) => {
+            const k = keyOf(f1);
+            const f2 = g2byKey[k] || null;
+            return {
+                category: f1.category,
+                giocatori: this.figGroupLabels(f1.group),
+                g1: { match: match1[k], ora: f1.ora, tee: f1.tee },
+                g2: f2 ? { match: match2[k], ora: f2.ora, tee: f2.tee } : null,
+            };
+        });
+
+        // Raggruppa per categoria, ordina per match Giro 1
+        const sezioni = [
+            { nome: 'Uomini', cat: 'M' },
+            { nome: 'Donne',  cat: 'F' },
+        ];
+
+        let html = '';
+        sezioni.forEach((sez) => {
+            const rows = righe
+                .filter((r) => r.category === sez.cat)
+                .sort((a, b) => a.g1.match - b.g1.match);
+            if (rows.length === 0) return;
+
+            html += `<h4 style="margin:14px 0 6px; font-weight:600; color:#1e293b;">${sez.nome}</h4>`;
+            html += `<table style="width:100%; border-collapse:collapse; font-size:13px;">
+              <thead>
+                <tr style="background:#eef2ff;">
+                  <th colspan="3" style="border:1px solid #c7d2fe; padding:4px;">Giro 1</th>
+                  <th colspan="3" style="border:1px solid #c7d2fe; padding:4px;">Giro 2</th>
+                  <th rowspan="2" style="border:1px solid #c7d2fe; padding:4px;">Giocatori</th>
+                </tr>
+                <tr style="background:#f1f5f9;">
+                  <th style="border:1px solid #c7d2fe; padding:3px;">Match</th>
+                  <th style="border:1px solid #c7d2fe; padding:3px;">Ora</th>
+                  <th style="border:1px solid #c7d2fe; padding:3px;">Tee</th>
+                  <th style="border:1px solid #c7d2fe; padding:3px;">Match</th>
+                  <th style="border:1px solid #c7d2fe; padding:3px;">Ora</th>
+                  <th style="border:1px solid #c7d2fe; padding:3px;">Tee</th>
+                </tr>
+              </thead>
+              <tbody>`;
+
+            rows.forEach((r) => {
+                const td = 'border:1px solid #e2e8f0; padding:3px 6px; text-align:center;';
+                const g2 = r.g2;
+                html += `<tr>
+                  <td style="${td} font-weight:600;">${r.g1.match}</td>
+                  <td style="${td}">${r.g1.ora}</td>
+                  <td style="${td}">${r.g1.tee}</td>
+                  <td style="${td} font-weight:600;">${g2 ? g2.match : '—'}</td>
+                  <td style="${td}">${g2 ? g2.ora : '—'}</td>
+                  <td style="${td}">${g2 ? g2.tee : '—'}</td>
+                  <td style="${td} text-align:left;">${r.giocatori.join('<br>')}</td>
+                </tr>`;
+            });
+
+            html += `</tbody></table>`;
+        });
 
         return html;
     }

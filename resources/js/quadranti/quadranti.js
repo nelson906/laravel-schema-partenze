@@ -235,6 +235,18 @@ $('#federgolf-gare-select').on('change', () => this.handleFedergolfGaraSelected(
 // e i pulsanti × vengono ricreati a ogni render.
 $('#first_table').on('click', '.qd-remove', (e) => this.handleRemovePlayer(e));
 
+// Vista FIG: apre il modal con la tabella Giro 1 + Giro 2 affiancati,
+// nel layout dell'orario ufficiale FIG, da confrontare col PDF pubblicato.
+$('#fig-view-btn').on('click', () => {
+  $('#fig-modal-body').html(this.logic.generateFigComparison());
+  $('#fig-modal').css('display', 'block');
+});
+$('#fig-modal-close').on('click', () => $('#fig-modal').hide());
+// Chiusura cliccando sullo sfondo scuro (non sul contenuto del modal)
+$('#fig-modal').on('click', (e) => {
+  if (e.target === e.currentTarget) $('#fig-modal').hide();
+});
+
 // Copia la striscia FIG negli appunti. Delegato perché #fig-strip-copy
 // viene ricreato a ogni render di generateFigStrip().
 $('#fig-strip').on('click', '#fig-strip-copy', (e) => {
@@ -496,8 +508,12 @@ $('#fig-strip').on('click', '#fig-strip-copy', (e) => {
     formData.append('file', file);
 
     try {
+      // URL iniettato dalla view via meta tag (route() di Laravel): mantiene
+      // quadranti.js identico tra progetti con prefissi di route diversi.
+      const uploadUrl = $('meta[name="quadranti-upload-url"]').attr('content')
+        || (($('meta[name="base-url"]').attr('content') || '') + '/user/quadranti/upload-excel');
       const response = await $.ajax({
-        url: ($('meta[name="base-url"]').attr('content') || '') + '/user/quadranti/upload-excel',
+        url: uploadUrl,
         type: 'POST',
         data: formData,
         processData: false,
@@ -526,6 +542,23 @@ $('#fig-strip').on('click', '#fig-strip-copy', (e) => {
         alert('Errore durante il caricamento del file');
       }
     }
+  }
+
+  /**
+   * Mostra l'overlay di caricamento full-screen con un messaggio.
+   * Overlay robusto: copre tutta la pagina, impossibile non vederlo
+   * durante le attese lunghe (fetch da federgolf.it).
+   */
+  showLoading(message) {
+    $('#loading-overlay-text').text(message || 'Caricamento…');
+    $('#loading-overlay').css('display', 'flex');
+  }
+
+  /**
+   * Nasconde l'overlay di caricamento.
+   */
+  hideLoading() {
+    $('#loading-overlay').hide();
   }
 
   /**
@@ -578,6 +611,14 @@ $('#fig-strip').on('click', '#fig-strip-copy', (e) => {
     } else {
       $('#1').hide();
       $('#2').show();
+    }
+
+    // Avviso modalità nominativa: spiega che la × rossa elimina l'iscritto.
+    // Visibile solo quando la modalità nominativo è attiva.
+    if (this.config.nominativo === 'On') {
+      $('#nominativo-hint').show();
+    } else {
+      $('#nominativo-hint').hide();
     }
   }
 
@@ -637,10 +678,11 @@ $('#fig-strip').on('click', '#fig-strip-copy', (e) => {
  * Carica TUTTE le gare da Federgolf
  */
 async handleLoadFedergolfGare() {
-  try {
-    // Mostra loading
-    $('#load-federgolf-btn').prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-2"></i> Caricamento...');
+  // Overlay full-screen + spinner sul pulsante: l'attesa da federgolf.it è lunga.
+  this.showLoading('Caricamento lista gare da Federgolf…');
+  $('#load-federgolf-btn').prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-2"></i> Caricamento...');
 
+  try {
     const response = await $.ajax({
       url: ($('meta[name="base-url"]').attr('content') || '') + '/user/federgolf/load-all',
       type: 'POST',
@@ -649,8 +691,6 @@ async handleLoadFedergolfGare() {
       }
     });
 
-    $('#load-federgolf-btn').prop('disabled', false).html('<i class="fas fa-globe mr-2"></i> Carica da Federgolf');
-
     if (response.success && response.gare.length > 0) {
       this.populateFedergolfDropdown(response.gare);
       alert(`Trovate ${response.gare.length} gare`);
@@ -658,9 +698,11 @@ async handleLoadFedergolfGare() {
       alert('Nessuna gara disponibile');
     }
   } catch (error) {
-    $('#load-federgolf-btn').prop('disabled', false).html('<i class="fas fa-globe mr-2"></i> Carica da Federgolf');
     console.error('Errore:', error);
     alert('Errore nel caricamento delle gare');
+  } finally {
+    this.hideLoading();
+    $('#load-federgolf-btn').prop('disabled', false).html('<i class="fas fa-globe mr-2"></i> Carica da Federgolf');
   }
 }
 
@@ -738,6 +780,11 @@ populateFedergolfDropdown(gare) {
     const gara = this.federgolfGare[idx];
     if (!gara) return;
 
+    // Indicatore di caricamento: il fetch iscritti da federgolf.it può
+    // richiedere parecchi secondi. Overlay full-screen + dropdown bloccato.
+    this.showLoading('Caricamento iscritti gara da Federgolf…');
+    $dropdown.prop('disabled', true);
+
     const fetchIscritti = (garaId) => $.ajax({
       url: ($('meta[name="base-url"]').attr('content') || '') + '/user/federgolf/iscritti',
       type: 'POST',
@@ -777,6 +824,10 @@ populateFedergolfDropdown(gare) {
     } catch (error) {
       console.error('Errore caricamento iscritti:', error);
       alert('⚠ Errore di rete nel caricamento degli iscritti.');
+    } finally {
+      // Ripristina UI sia in caso di successo sia di errore
+      this.hideLoading();
+      $dropdown.prop('disabled', false);
     }
   }
 

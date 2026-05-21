@@ -1330,6 +1330,140 @@ describe('Striscia FIG — quadrantRange / figQuadranti / generateFigStrip', () 
   });
 });
 
+// ─── Vista FIG (tabella Giro 1 + Giro 2 combinata) ──────────────────────────
+// generateFigComparison genera prima+seconda, accoppia i flight per giocatori
+// e produce la tabella in stile orario ufficiale FIG.
+describe('Vista FIG — generateFigComparison', () => {
+  let logic;
+  beforeEach(() => {
+    resetPlayerStorage();
+    logic = makeLogic({
+      players: 144,
+      proette: 48,
+      playersPerFlight: 3,
+      nominativo: 'Off',
+      garaNT: 'Gara 54 buche',
+      doppiePartenze: 'Doppie Partenze',
+      compatto: 'Early/Late',
+      startTime: '08:00',
+      gap: '00:10',
+      round: '04:30',
+    });
+  });
+
+  it('ritorna HTML con sezioni Uomini e Donne e intestazioni Giro 1/Giro 2', () => {
+    const html = logic.generateFigComparison();
+    expect(html).toContain('Uomini');
+    expect(html).toContain('Donne');
+    expect(html).toContain('Giro 1');
+    expect(html).toContain('Giro 2');
+    expect(html).toContain('Match');
+    expect(html).toContain('Giocatori');
+  });
+
+  it('ogni flight uomini compare una sola volta nella tabella', () => {
+    const html = logic.generateFigComparison();
+    // Estrai la sezione Uomini (fino a "Donne")
+    const sezUomini = html.split('Donne')[0];
+    const trCount = (sezUomini.match(/<tr>/g) || []).length;
+    // 144 uomini / 3 = 48 flight → 48 righe nel tbody
+    expect(trCount).toBe(48);
+  });
+
+  it('non altera figQuadranti (lo ripristina dopo generateDoubleTee interni)', () => {
+    // Genera prima la tabella normale → popola figQuadranti
+    logic.generateDoubleTee('prima');
+    const before = JSON.stringify(logic.figQuadranti);
+    // generateFigComparison chiama generateDoubleTee 2 volte internamente
+    logic.generateFigComparison();
+    const after = JSON.stringify(logic.figQuadranti);
+    expect(after).toBe(before);
+  });
+
+  it('senza giocatori → messaggio invece della tabella', () => {
+    const vuoto = makeLogic({
+      players: 0, proette: 0, playersPerFlight: 3,
+      garaNT: 'Gara 54 buche', doppiePartenze: 'Doppie Partenze',
+      compatto: 'Early/Late', startTime: '08:00', gap: '00:10', round: '04:30',
+      nominativo: 'Off',
+    });
+    const html = vuoto.generateFigComparison();
+    expect(html).toContain('Nessun flight');
+  });
+
+  it('i match del Giro 1 sono progressivi e iniziano da 1', () => {
+    const html = logic.generateFigComparison();
+    const sezUomini = html.split('Donne')[0];
+    // Primo match della prima riga dati = 1
+    const tbody = sezUomini.split('<tbody>')[1] || '';
+    const firstRow = tbody.split('</tr>')[0];
+    expect(firstRow).toContain('>1<');
+  });
+
+  it('ogni riga ha sia Giro 1 sia Giro 2 valorizzati (flight presente in entrambe le giornate)', () => {
+    const html = logic.generateFigComparison();
+    // Nessuna cella "—" attesa: ogni flight esiste sia in prima sia in seconda
+    expect(html).not.toContain('>—<');
+  });
+
+  it('figFlights popolato da generateDoubleTee contiene group/ora/tee/category', () => {
+    logic.generateDoubleTee('prima');
+    expect(Array.isArray(logic.figFlights)).toBe(true);
+    expect(logic.figFlights.length).toBeGreaterThan(0);
+    logic.figFlights.forEach((f) => {
+      expect(f).toHaveProperty('group');
+      expect(f).toHaveProperty('ora');
+      expect([1, 10]).toContain(f.tee);
+      expect(['M', 'F']).toContain(f.category);
+    });
+  });
+
+  it('numerazione match separata: uomini e donne partono entrambi da 1', () => {
+    // FIG tratta gara M e gara F come due gare distinte: numerazione
+    // dei match indipendente, ciascuna da 1 (no sequenza condivisa con buchi).
+    const html = logic.generateFigComparison();
+    const sezDonne = html.split('Donne')[1] || '';
+    const tbodyDonne = sezDonne.split('<tbody>')[1] || '';
+    const firstRowDonne = tbodyDonne.split('</tr>')[0];
+    // La prima riga donne deve avere match Giro 1 = 1
+    expect(firstRowDonne).toContain('>1<');
+    // 48 donne / 3 = 16 flight → match donne vanno 1..16, nessun match > 16
+    const sezUomini = html.split('Donne')[0];
+    const tbodyUomini = sezUomini.split('<tbody>')[1] || '';
+    const matchUomini = (tbodyUomini.match(/font-weight:600;">(\d+)</g) || [])
+      .map(m => parseInt(m.match(/>(\d+)</)[1], 10));
+    // 144 uomini / 3 = 48 flight → max match uomini = 48
+    expect(Math.max(...matchUomini)).toBe(48);
+  });
+
+  it('mostra i nomi quando in modalità nominativo', () => {
+    storage.set('atleti', Array.from({ length: 12 }, (_, i) => `Atleta${i + 1}`));
+    storage.set('atlete', Array.from({ length: 6 }, (_, i) => `Atleta${i + 1}`));
+    const logicNom = makeLogic({
+      players: 12, proette: 6, playersPerFlight: 3, nominativo: 'On',
+      garaNT: 'Gara 36 buche', doppiePartenze: 'Doppie Partenze',
+      compatto: 'Early/Late', startTime: '08:00', gap: '00:10', round: '04:30',
+    });
+    const html = logicNom.generateFigComparison();
+    // La Vista FIG deve mostrare i nomi, non i numeri di posizione
+    expect(html).toContain('Atleta1');
+  });
+
+  it('funziona in modalità numerica con il giro a 36 buche', () => {
+    const l36 = makeLogic({
+      players: 54, proette: 0, playersPerFlight: 3,
+      garaNT: 'Gara 36 buche', doppiePartenze: 'Doppie Partenze',
+      compatto: 'Early/Late', startTime: '08:00', gap: '00:10', round: '04:30',
+      nominativo: 'Off',
+    });
+    const html = l36.generateFigComparison();
+    expect(html).toContain('Uomini');
+    // 54 uomini / 3 = 18 flight
+    const trCount = (html.match(/<tr>/g) || []).length;
+    expect(trCount).toBe(18);
+  });
+});
+
 // ─── REGRESSIONE: normalizeGaraTitle (raggruppamento dropdown M+F) ───────────
 // Bug: la regex /\s*(MASCHILE|FEMMINILE)\s*/gi non gestiva la punteggiatura
 // attorno alla parola-chiave. Conseguenza: gare M ed F dello stesso evento con
