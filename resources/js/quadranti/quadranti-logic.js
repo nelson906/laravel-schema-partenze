@@ -593,14 +593,39 @@ export class QuadrantiLogic {
     // Calcola gli uomini applicando il constraint
     const maleGroups = (players > 0) ? this.generatePlayerGroups(players, mod, atleti, 'M', maleMaxEarlySlots) : [];
 
-        // Striscia FIG: primo/ultimo numero per quadrante (giro normale doppio tee).
-        // Q1-Q4 sono i quadranti restituiti da generatePlayerGroups.
+        // Assegna il flightNumber a ogni gruppo: prima TUTTI i flight di Tee 1
+        // (quadranti 1 e 3 in sequenza), poi TUTTI quelli di Tee 10 (2 e 4).
+        // Il giorno 2 ruota i quadranti, quindi Tee 1 = Q4+Q2, Tee 10 = Q3+Q1.
+        // Numerazione separata per uomini e donne.
+        const assignFlightNumbers = (groups) => {
+            const byQ = (q) => groups.filter(g => g.quadrant === q);
+            const tee1  = dayNumber === 1
+                ? [...byQ('Q1'), ...byQ('Q3')]
+                : [...byQ('Q4'), ...byQ('Q2')];
+            const tee10 = dayNumber === 1
+                ? [...byQ('Q2'), ...byQ('Q4')]
+                : [...byQ('Q3'), ...byQ('Q1')];
+            let n = 1;
+            tee1.forEach((g) => { g.flightNumber = n++; });
+            tee10.forEach((g) => { g.flightNumber = n++; });
+        };
+        assignFlightNumbers(maleGroups);
+        assignFlightNumbers(femaleGroups);
+
+        // Striscia FIG: estremi (min/max) per quadrante (giro normale doppio tee).
+        // Il giorno 2 i quadranti ruotano di posizione: nella striscia vanno
+        // rietichettati affinché l'etichetta INVERTIRE segua i numeri.
+        // Mappa giorno 2: l'etichetta Qx mostra i giocatori del quadrante
+        // figSource[Qx] (Q1←Q3, Q2←Q4, Q3←Q1, Q4←Q2).
+        const figSource = dayNumber === 1
+            ? { Q1: 'Q1', Q2: 'Q2', Q3: 'Q3', Q4: 'Q4' }
+            : { Q1: 'Q3', Q2: 'Q4', Q3: 'Q1', Q4: 'Q2' };
         this.figQuadranti = [];
-        ['Q1', 'Q2', 'Q3', 'Q4'].forEach((q) => {
-            this.pushFigQuadrante('Uomini', q, maleGroups.filter(g => g.quadrant === q));
+        ['Q1', 'Q2', 'Q3', 'Q4'].forEach((label) => {
+            this.pushFigQuadrante('Uomini', label, maleGroups.filter(g => g.quadrant === figSource[label]));
         });
-        ['Q1', 'Q2', 'Q3', 'Q4'].forEach((q) => {
-            this.pushFigQuadrante('Donne', q, femaleGroups.filter(g => g.quadrant === q));
+        ['Q1', 'Q2', 'Q3', 'Q4'].forEach((label) => {
+            this.pushFigQuadrante('Donne', label, femaleGroups.filter(g => g.quadrant === figSource[label]));
         });
 
         // Filter groups by type
@@ -1205,7 +1230,12 @@ export class QuadrantiLogic {
 
             // Left side
             if (leftGroups[i]) {
-                html += `<td class="text-center px-2 py-1 border border-gray-300 font-medium" style="background-color:${leftBg}">${matchNumber++}</td>`;
+                // Usa il flightNumber pre-assegnato (numerazione Tee 1 → Tee 10).
+                // Fallback al contatore incrementale per i gruppi che non lo
+                // hanno (es. giro finale doppio tee).
+                const leftNum = leftGroups[i].flightNumber != null
+                    ? leftGroups[i].flightNumber : matchNumber++;
+                html += `<td class="text-center px-2 py-1 border border-gray-300 font-medium" style="background-color:${leftBg}">${leftNum}</td>`;
                 html += '<td class="text-center px-2 py-1 border border-gray-300 font-medium">1</td>';
 
                 for (let j = 0; j < mod; j++) {
@@ -1225,8 +1255,10 @@ export class QuadrantiLogic {
                     html += renderCell(rightGroups[i], j);
                 }
 
+                const rightNum = rightGroups[i].flightNumber != null
+                    ? rightGroups[i].flightNumber : matchNumber++;
                 html += '<td class="text-center px-2 py-1 border border-gray-300 font-medium">10</td>';
-                html += `<td class="text-center px-2 py-1 border border-gray-300 font-medium" style="background-color:${rightBg}">${matchNumber++}</td>`;
+                html += `<td class="text-center px-2 py-1 border border-gray-300 font-medium" style="background-color:${rightBg}">${rightNum}</td>`;
                 this._figFlightsBuffer.push({ group: rightGroups[i], ora: currentTime, tee: 10, category });
             } else {
                 html += `<td colspan="${mod + 2}" class="text-center px-2 py-1 border border-gray-300"></td>`;
@@ -1285,45 +1317,49 @@ export class QuadrantiLogic {
     }
 
     /**
-     * Calcola { first, last } di un quadrante (lista di gruppi in ordine di
-     * display).
+     * Calcola { first, last } di un quadrante = gli ESTREMI del range di
+     * numeri del quadrante (il minimo e il massimo tra TUTTI i giocatori).
      *
-     *   first = prima cella del primo gruppo (numero in alto a sinistra).
-     *   last  = numero dell'ULTIMO gruppo più distante da first, cioè
-     *           l'estremo del range. Per un quadrante crescente è il massimo
-     *           dell'ultimo terzetto, per uno decrescente il minimo.
+     * L'ordine in cui sono restituiti riflette la direzione di percorrenza:
+     *   - quadrante crescente  → { first: min, last: max }
+     *   - quadrante decrescente → { first: max, last: min }  (INVERTIRE)
      *
-     * Motivo del "più distante": l'ultimo terzetto può essere crescente o
-     * decrescente al suo interno indipendentemente dalla direzione del
-     * quadrante. Es. quadrante decrescente con ultimo flight [1,2,3]: l'ultimo
-     * numero del quadrante è 1 (il più lontano da first), non 3.
+     * La direzione si determina confrontando il numero più basso del PRIMO
+     * flight con quello dell'ULTIMO: se il primo flight ha numeri più alti,
+     * il quadrante è percorso in ordine decrescente.
      *
      * Ritorna null se il quadrante è vuoto.
      */
     quadrantRange(groups) {
         if (!Array.isArray(groups) || groups.length === 0) return null;
 
-        const firstGroup = groups[0];
-        const lastGroup = groups[groups.length - 1];
-
-        const first = this.figPlayerNumber(firstGroup, 0);
-        if (first == null) return null;
-
-        let last = null;
-        let maxDist = -1;
-        for (let j = 0; j < lastGroup.players.length; j++) {
-            const p = lastGroup.players[j];
-            if (p === '' || p == null) continue;
-            const num = this.figPlayerNumber(lastGroup, j);
-            const dist = Math.abs(Number(num) - Number(first));
-            if (dist > maxDist) {
-                maxDist = dist;
-                last = num;
+        // Numeri "FIG" non vuoti di un gruppo
+        const numbersOf = (group) => {
+            const out = [];
+            for (let j = 0; j < group.players.length; j++) {
+                const p = group.players[j];
+                if (p === '' || p == null) continue;
+                out.push(Number(this.figPlayerNumber(group, j)));
             }
-        }
-        if (last == null) return null;
+            return out;
+        };
 
-        return { first, last };
+        const allNums = [];
+        groups.forEach((g) => { allNums.push(...numbersOf(g)); });
+        if (allNums.length === 0) return null;
+
+        const min = Math.min(...allNums);
+        const max = Math.max(...allNums);
+
+        // Direzione: confronta il minimo del primo flight con quello dell'ultimo
+        const firstNums = numbersOf(groups[0]);
+        const lastNums = numbersOf(groups[groups.length - 1]);
+        const decrescente = firstNums.length > 0 && lastNums.length > 0
+            && Math.min(...firstNums) > Math.min(...lastNums);
+
+        return decrescente
+            ? { first: max, last: min }
+            : { first: min, last: max };
     }
 
     /**
@@ -1333,12 +1369,18 @@ export class QuadrantiLogic {
     pushFigQuadrante(categoria, label, groups) {
         const r = this.quadrantRange(groups);
         if (!r) return;
+        // flightStart = numero di flight con cui inizia il quadrante (se i
+        // gruppi hanno il flightNumber pre-assegnato da generateDoubleTee).
+        const flightStart = (groups[0] && groups[0].flightNumber != null)
+            ? groups[0].flightNumber
+            : null;
         this.figQuadranti.push({
             categoria,
             label,
             first: r.first,
             last: r.last,
             invertire: Number(r.first) > Number(r.last),
+            flightStart,
         });
     }
 
@@ -1364,7 +1406,10 @@ export class QuadrantiLogic {
 
         // Testo piatto per il pulsante "Copia" (una riga per quadrante)
         const plain = quad
-            .map(q => `${q.categoria} ${q.label}: ${q.first} → ${q.last}${q.invertire ? '  INVERTIRE' : ''}`)
+            .map((q) => {
+                const fl = q.flightStart != null ? ` [flight ${q.flightStart}]` : '';
+                return `${q.categoria} ${q.label}: ${q.first} → ${q.last}${fl}${q.invertire ? '  INVERTIRE' : ''}`;
+            })
             .join('\n');
 
         let html = `
@@ -1388,9 +1433,12 @@ export class QuadrantiLogic {
                 const invBadge = v.invertire
                     ? ` <span style="background:#dc2626; color:#fff; font-size:10px; font-weight:700; padding:1px 6px; border-radius:4px; margin-left:6px;">INVERTIRE</span>`
                     : '';
+                const flightInfo = v.flightStart != null
+                    ? ` <span style="color:#475569; font-size:11px;">· flight&nbsp;${v.flightStart}</span>`
+                    : '';
                 html += `<span style="background:#fff; border:1px solid #c7d2fe; border-radius:6px; padding:4px 10px; font-size:13px;">
                   <span style="color:#64748b;">${v.label}:</span>
-                  <strong style="color:#0f172a;">${v.first} &rarr; ${v.last}</strong>${invBadge}
+                  <strong style="color:#0f172a;">${v.first} &rarr; ${v.last}</strong>${flightInfo}${invBadge}
                 </span>`;
             });
             html += `</div></div>`;

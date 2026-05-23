@@ -20,11 +20,6 @@ enum UserType: string
         return in_array($this, [self::SuperAdmin, self::Admin]);
     }
 
-    public function isSuperAdmin(): bool
-    {
-        return $this === self::SuperAdmin;
-    }
-
     public function label(): string
     {
         return match ($this) {

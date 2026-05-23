@@ -272,17 +272,7 @@ class ArubaToolsController extends Controller
      */
     public function composerDiagnostic()
     {
-        $possiblePaths = [
-            'composer',
-            '/usr/local/bin/composer',
-            '/usr/bin/composer',
-            base_path('composer.phar'),
-            '/opt/alt/php81/usr/bin/composer',
-            '/opt/alt/php82/usr/bin/composer',
-            '/opt/alt/php83/usr/bin/composer',
-            getenv('HOME').'/composer',
-            getenv('HOME').'/bin/composer',
-        ];
+        $possiblePaths = SystemOperations::composerSearchPaths();
 
         $output = "🔍 RICERCA COMPOSER SUL SERVER\n";
         $output .= str_repeat('=', 50)."\n\n";

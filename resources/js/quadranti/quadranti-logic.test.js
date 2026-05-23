@@ -698,6 +698,40 @@ describe('REGRESSIONE — generateDoubleTee (prima/seconda)', () => {
       expect(html).toContain(`>${i}<`);
     }
   });
+
+  it('numerazione flight: Tee 1 in sequenza poi Tee 10 (non alternata)', () => {
+    // I gruppi maschili ricevono flightNumber: Tee1 (Q1+Q3) 1..N, Tee10 (Q2+Q4) N+1..
+    const l = makeLogic({
+      players: 54, proette: 0, playersPerFlight: 3, nominativo: 'Off',
+      garaNT: 'Gara 54 buche', doppiePartenze: 'Doppie Partenze',
+      compatto: 'Early/Late', startTime: '08:00', gap: '00:11', round: '04:30',
+    });
+    l.generateDoubleTee('prima');
+    // Verifica via figQuadranti: ogni quadrante ha flightStart numerico
+    const uomini = l.figQuadranti.filter((x) => x.categoria === 'Uomini');
+    uomini.forEach((q) => {
+      expect(typeof q.flightStart).toBe('number');
+      expect(q.flightStart).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  it('flightStart: Q1 inizia a 1, Q3 subito dopo Q1 (Tee 1 in sequenza)', () => {
+    const l = makeLogic({
+      players: 144, proette: 0, playersPerFlight: 3, nominativo: 'Off',
+      garaNT: 'Gara 54 buche', doppiePartenze: 'Doppie Partenze',
+      compatto: 'Early/Late', startTime: '08:00', gap: '00:10', round: '04:30',
+    });
+    l.generateDoubleTee('prima');
+    const q = {};
+    l.figQuadranti.filter((x) => x.categoria === 'Uomini')
+      .forEach((x) => { q[x.label] = x; });
+    // Q1 è il primo Tee 1 → flightStart 1
+    expect(q.Q1.flightStart).toBe(1);
+    // Q3 segue Q1 sullo stesso Tee 1: il suo flightStart > Q1.flightStart
+    if (q.Q3) expect(q.Q3.flightStart).toBeGreaterThan(q.Q1.flightStart);
+    // Q2 (Tee 10) inizia dopo tutti i Tee 1
+    if (q.Q2) expect(q.Q2.flightStart).toBeGreaterThan(q.Q1.flightStart);
+  });
 });
 
 // ─── Giro finale 54 buche (single tee, classifica) ──────────────────────────
@@ -1157,17 +1191,29 @@ describe('Striscia FIG — quadrantRange / figQuadranti / generateFigStrip', () 
       expect(r.last).toBe(1);
     });
 
-    it('[BUG Q2] ultimo flight crescente in quadrante decrescente → last = estremo lontano', () => {
-      // Q2 decrescente: flight [34,35,36] ... [1,2,3]. L'ultimo numero del
-      // quadrante è 1 (più distante da first=34), NON 3 (ultima cella).
+    it('quadrante decrescente → first = max, last = min (estremi del range)', () => {
+      // Q2 decrescente: flight [34,35,36] ... [1,2,3]. Gli estremi del
+      // quadrante sono min=1 e max=36; essendo decrescente: first=36, last=1.
       const q2 = [
         { players: [34, 35, 36] },
         { players: [31, 32, 33] },
         { players: [1, 2, 3] },
       ];
       const r = logic.quadrantRange(q2);
-      expect(r.first).toBe(34);
+      expect(r.first).toBe(36);
       expect(r.last).toBe(1);
+    });
+
+    it('first/last sono il MASSIMO e il MINIMO reali, non la prima/ultima cella', () => {
+      // Q decrescente [13,14,15]…[1,2,3]: estremi 1 e 15 (NON 13).
+      const q = [
+        { players: [13, 14, 15] },
+        { players: [10, 11, 12] },
+        { players: [1, 2, 3] },
+      ];
+      const r = logic.quadrantRange(q);
+      expect(r.first).toBe(15);  // massimo
+      expect(r.last).toBe(1);    // minimo
     });
 
     it('quadrante crescente con ultimo flight crescente → last = massimo', () => {
@@ -1250,6 +1296,51 @@ describe('Striscia FIG — quadrantRange / figQuadranti / generateFigStrip', () 
       // Ci sono sia voci Uomini sia Donne
       expect(l.figQuadranti.some(q => q.categoria === 'Uomini')).toBe(true);
       expect(l.figQuadranti.some(q => q.categoria === 'Donne')).toBe(true);
+    });
+  });
+
+  describe('rietichettatura quadranti giorno 2', () => {
+    it('giorno 1 → etichette Q1-Q4 invariate; giorno 2 → rietichettate', () => {
+      const l = makeLogic({
+        players: 144, proette: 0, playersPerFlight: 3, nominativo: 'Off',
+        garaNT: 'Gara 54 buche', doppiePartenze: 'Doppie Partenze',
+        compatto: 'Early/Late', startTime: '08:00', gap: '00:10', round: '04:30',
+      });
+      // Giorno 1: registra i range per etichetta
+      l.generateDoubleTee('prima');
+      const g1 = {};
+      l.figQuadranti.filter(q => q.categoria === 'Uomini')
+        .forEach(q => { g1[q.label] = `${q.first}-${q.last}`; });
+
+      // Giorno 2: i quadranti sono rietichettati Q1←Q3, Q2←Q4, Q3←Q1, Q4←Q2
+      l.generateDoubleTee('seconda');
+      const g2 = {};
+      l.figQuadranti.filter(q => q.categoria === 'Uomini')
+        .forEach(q => { g2[q.label] = `${q.first}-${q.last}`; });
+
+      // L'etichetta Q1 del giorno 2 mostra i numeri del Q3 del giorno 1
+      expect(g2.Q1).toBe(g1.Q3);
+      expect(g2.Q2).toBe(g1.Q4);
+      expect(g2.Q3).toBe(g1.Q1);
+      expect(g2.Q4).toBe(g1.Q2);
+    });
+
+    it('INVERTIRE giorno 1 su Q2/Q3 → giorno 2 su Q1/Q4', () => {
+      const l = makeLogic({
+        players: 144, proette: 0, playersPerFlight: 3, nominativo: 'Off',
+        garaNT: 'Gara 54 buche', doppiePartenze: 'Doppie Partenze',
+        compatto: 'Early/Late', startTime: '08:00', gap: '00:10', round: '04:30',
+      });
+      l.generateDoubleTee('prima');
+      const inv1 = l.figQuadranti.filter(q => q.categoria === 'Uomini' && q.invertire)
+        .map(q => q.label).sort();
+      l.generateDoubleTee('seconda');
+      const inv2 = l.figQuadranti.filter(q => q.categoria === 'Uomini' && q.invertire)
+        .map(q => q.label).sort();
+      // Giorno 1: INVERTIRE su Q2, Q3
+      expect(inv1).toEqual(['Q2', 'Q3']);
+      // Giorno 2: gli stessi blocchi di numeri ora sono etichettati Q1, Q4
+      expect(inv2).toEqual(['Q1', 'Q4']);
     });
   });
 

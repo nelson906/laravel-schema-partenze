@@ -19,7 +19,6 @@ export const DEFAULT_CONFIG = {
   // Competition configuration
   giornata: 'prima',
   garaNT: 'Gara 54 buche',
-  garaNT36: 'Normale',
   doppiePartenze: 'Doppie Partenze',
   compatto: 'Early/Late',
   
@@ -33,30 +32,6 @@ export const DEFAULT_CONFIG = {
   
   // Geographic areas for ephemeris calculation
   geoArea: 'NORD OVEST'
-};
-
-export const GEO_AREAS = [
-  'NORD OVEST',
-  'NORD',
-  'NORD EST',
-  'CENTRO',
-  'CENTRO SUD',
-  'SUD EST',
-  'SUD OVEST',
-  'SARDEGNA'
-];
-
-export const TIME_OPTIONS = {
-  startTimes: [
-    '07:00', '07:10', '07:20', '07:30', '07:40', '07:50',
-    '08:00', '08:10', '08:20', '08:30', '08:40', '08:50', '09:00'
-  ],
-  gaps: [
-    '00:08', '00:09', '00:10', '00:11', '00:12', '00:13', '00:14', '00:15'
-  ],
-  rounds: [
-    '04:10', '04:20', '04:30', '04:40', '04:50'
-  ]
 };
 
 export const COMPETITION_TYPES = {

@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use App\Enums\UserType;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -53,17 +52,5 @@ class User extends Authenticatable
     public function isAdmin(): bool
     {
         return $this->user_type?->isAdmin() ?? false;
-    }
-
-    public function isActive(): bool
-    {
-        return $this->is_active;
-    }
-
-    /* ──────────────────────── Scope ──────────────────────── */
-
-    public function scopeActive(Builder $q): Builder
-    {
-        return $q->where('is_active', true);
     }
 }

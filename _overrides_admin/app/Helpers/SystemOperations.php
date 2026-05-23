@@ -28,24 +28,31 @@ class SystemOperations
     // ================================
 
     /**
+     * Percorsi comuni in cui Composer potrebbe essere installato.
+     * Unica fonte condivisa da getComposerVersion(), findComposerPath() e
+     * ArubaToolsController::composerDiagnostic().
+     */
+    public static function composerSearchPaths(): array
+    {
+        return [
+            'composer',                        // PATH globale
+            '/usr/local/bin/composer',         // Installazione standard
+            '/usr/bin/composer',               // Debian/Ubuntu
+            base_path('composer.phar'),        // Locale al progetto
+            '/opt/alt/php81/usr/bin/composer', // Aruba CloudLinux PHP 8.1
+            '/opt/alt/php82/usr/bin/composer', // Aruba CloudLinux PHP 8.2
+            '/opt/alt/php83/usr/bin/composer', // Aruba CloudLinux PHP 8.3
+            getenv('HOME').'/composer',        // Home directory
+            getenv('HOME').'/bin/composer',    // Home bin
+        ];
+    }
+
+    /**
      * Verifica versione Composer (con percorsi multipli)
      */
     public static function getComposerVersion(): ?string
     {
-        // Lista percorsi comuni dove Composer potrebbe essere installato
-        $possiblePaths = [
-            'composer',                           // PATH globale
-            '/usr/local/bin/composer',            // Installazione standard
-            '/usr/bin/composer',                  // Debian/Ubuntu
-            base_path('composer.phar'),           // Locale al progetto
-            '/opt/alt/php81/usr/bin/composer',    // Aruba CloudLinux PHP 8.1
-            '/opt/alt/php82/usr/bin/composer',    // Aruba CloudLinux PHP 8.2
-            '/opt/alt/php83/usr/bin/composer',    // Aruba CloudLinux PHP 8.3
-            getenv('HOME').'/composer',         // Home directory
-            getenv('HOME').'/bin/composer',     // Home bin
-        ];
-
-        foreach ($possiblePaths as $path) {
+        foreach (self::composerSearchPaths() as $path) {
             // Prova ad eseguire composer --version
             $result = self::execCommand("{$path} --version 2>&1");
 
@@ -73,19 +80,7 @@ class SystemOperations
             return $composerPath;
         }
 
-        $possiblePaths = [
-            'composer',
-            '/usr/local/bin/composer',
-            '/usr/bin/composer',
-            base_path('composer.phar'),
-            '/opt/alt/php81/usr/bin/composer',
-            '/opt/alt/php82/usr/bin/composer',
-            '/opt/alt/php83/usr/bin/composer',
-            getenv('HOME').'/composer',
-            getenv('HOME').'/bin/composer',
-        ];
-
-        foreach ($possiblePaths as $path) {
+        foreach (self::composerSearchPaths() as $path) {
             $result = self::execCommand("{$path} --version 2>&1");
 
             if ($result['success'] && ! empty($result['output'])) {
@@ -161,52 +156,6 @@ class SystemOperations
         return [
             'success' => $result['success'],
             'packages' => $result['output'],
-        ];
-    }
-
-    // ================================
-    // GIT OPERATIONS
-    // ================================
-
-    /**
-     * Verifica se Git è disponibile
-     */
-    public static function isGitAvailable(): bool
-    {
-        return self::commandExists('git');
-    }
-
-    /**
-     * Ottieni branch corrente
-     */
-    public static function getCurrentBranch(): ?string
-    {
-        if (! self::isGitAvailable()) {
-            return null;
-        }
-
-        $basePath = base_path();
-        $result = self::execCommand("cd {$basePath} && git rev-parse --abbrev-ref HEAD");
-
-        return $result['success'] ? trim($result['output'][0] ?? '') : null;
-    }
-
-    /**
-     * Git status
-     */
-    public static function gitStatus(): array
-    {
-        if (! self::isGitAvailable()) {
-            return ['success' => false, 'output' => 'Git non disponibile'];
-        }
-
-        $basePath = base_path();
-        $result = self::execCommand("cd {$basePath} && git status --short");
-
-        return [
-            'success' => $result['success'],
-            'files' => $result['output'],
-            'has_changes' => count($result['output']) > 0,
         ];
     }
 
