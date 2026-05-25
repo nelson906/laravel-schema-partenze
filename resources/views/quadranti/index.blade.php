@@ -74,10 +74,17 @@
 
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 mb-2">Tipo Gara:</label>
+                                {{-- Le giornate disponibili per ogni formato sono ricavate
+                                     da COMPETITION_FORMATS (config.js): #giornata viene
+                                     ripopolato via JS quando cambia il formato. --}}
                                 <select id="gara_NT"
                                     class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
                                     <option value="Gara 54 buche">Gara 54 buche</option>
-                                    <option value="Gara 36 buche">Gara 36 buche</option>
+                                    <option value="Gara 72 buche">Gara 72 buche</option>
+                                    <option value="Gara con patrocinio FIG">Gara con patrocinio FIG</option>
+                                    <option value="Trofeo Giovanile Federale">Trofeo Giovanile Federale</option>
+                                    <option value="Gara Giovanile">Gara Giovanile</option>
+                                    <option value="Teodoro Soldati">Teodoro Soldati</option>
                                 </select>
                             </div>
 

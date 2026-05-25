@@ -7,7 +7,7 @@ import {
   DEFAULT_CONFIG,
   TEE_TYPES,
   ROUND_TYPES,
-  COMPETITION_TYPES
+  COMPETITION_FORMATS
 } from './config.js';
 
 import {
@@ -87,6 +87,8 @@ class QuadrantiApp {
     $('#geo_area').val(this.config.geoArea);
     $('#start').val(storage.get('start', formatDate(new Date())));
     $('#gara_NT').val(this.config.garaNT);
+    // Popola #giornata con i giri del formato selezionato (data-driven)
+    this.refreshGiornataOptions();
     $('#players').val(this.config.players);
     $('#proette').val(this.config.proette);
     // Campi qualificati post-taglio (visibili solo nel giro finale)
@@ -117,6 +119,38 @@ class QuadrantiApp {
   }
 
   /**
+   * Ripopola il menu #giornata con i giri del formato di gara selezionato,
+   * leggendo COMPETITION_FORMATS (modello data-driven). Esempi: la Gara 72
+   * buche espone prima/seconda/terzo/quarto; la Gara Giovanile il solo giro
+   * unico; le Gare con patrocinio FIG prima/seconda. Mantiene la selezione se
+   * ancora valida per il nuovo formato, altrimenti seleziona il primo giro.
+   */
+  refreshGiornataOptions() {
+    const fmt = COMPETITION_FORMATS[this.config.garaNT];
+    const rounds = (fmt && fmt.rounds && fmt.rounds.length)
+      ? fmt.rounds
+      : [
+          { id: 'prima',   label: 'Prima Giornata' },
+          { id: 'seconda', label: 'Seconda Giornata' },
+          { id: 'finale',  label: 'Giro Finale (classifica)' },
+        ];
+
+    const $giornata = $('#giornata');
+    const previous = this.config.giornata;
+    $giornata.empty();
+    rounds.forEach((r) => {
+      $giornata.append(`<option value="${r.id}">${r.label}</option>`);
+    });
+
+    const selected = rounds.some((r) => r.id === previous)
+      ? previous
+      : rounds[0].id;
+    $giornata.val(selected);
+    this.config.giornata = selected;
+    storage.set('giornata', selected);
+  }
+
+  /**
    * Mostra/nasconde i campi del taglio (qualificati uomini/donne) in base alla
    * giornata selezionata. Visibili solo per giornata='finale'.
    *
@@ -128,11 +162,22 @@ class QuadrantiApp {
    * merito espliciti").
    */
   toggleFinalCutFields() {
-    if (this.config.giornata === ROUND_TYPES.FINAL) {
+    // Data-driven: i campi del taglio si mostrano quando il giro corrente è
+    // di tipo 'finale' secondo COMPETITION_FORMATS (54 buche: 'finale';
+    // 72 buche: 'terzo'/'quarto'). Fallback al check storico se il formato
+    // non è in tabella.
+    const fmt = COMPETITION_FORMATS[this.config.garaNT];
+    const roundDesc = fmt
+      ? fmt.rounds.find((r) => r.id === this.config.giornata)
+      : null;
+    const isFinale = roundDesc
+      ? roundDesc.type === 'finale'
+      : this.config.giornata === ROUND_TYPES.FINAL;
+
+    if (isFinale) {
       $('.finale-only').show();
       // Auto-popola dal lookup FIG basato sugli iscritti correnti.
-      // L'evento si scatena ogni volta che si entra in 'finale' (cambiando
-      // giornata o cambiando players/proette mentre giornata=finale).
+      // L'evento si scatena ogni volta che si entra in un giro finale.
       this.applyFigCutFormula('M');
       this.applyFigCutFormula('F');
     } else {
@@ -213,6 +258,14 @@ class QuadrantiApp {
 
     // Specific handlers for numeric inputs (incluso i campi post-taglio del giro finale)
     $('#players, #proette, #players_cut, #proette_cut').on('input change', handleFormChange);
+
+    // Formato gara cambiato → ripopola le giornate disponibili (data-driven).
+    // Handler sincrono: aggiorna #giornata PRIMA che handleFormChange (debounced)
+    // legga la giornata selezionata.
+    $('#gara_NT').on('change', () => {
+      this.config.garaNT = $('#gara_NT').val();
+      this.refreshGiornataOptions();
+    });
 
     // Button clicks
     $('#refresh').on('click', () => this.handleReset());
@@ -635,12 +688,20 @@ $('#fig-strip').on('click', '#fig-strip-copy', (e) => {
       title = 'Prima Giornata';
     } else if (giornata === ROUND_TYPES.SECOND) {
       title = 'Seconda Giornata';
-      if (gara === COMPETITION_TYPES.GARA_36) {
-        title += ' per classifica';
-      }
+      // 2° giro "per classifica": i giri marcati reversed nel descrittore
+      // (Gare con patrocinio FIG / Trofei Giovanili).
+      const fmt2 = COMPETITION_FORMATS[gara];
+      const rd2 = fmt2 ? fmt2.rounds.find((r) => r.id === giornata) : null;
+      if (rd2 && rd2.reversed) title += ' per classifica';
     } else if (giornata === ROUND_TYPES.FINAL) {
       // Coerente con l'header dell'immagine di riferimento: "3° GIRO PER CLASSIFICA TEE 1"
       title = '3° Giro per classifica (Tee 1)';
+    } else {
+      // Giri introdotti dai nuovi formati (es. 3°/4° giro della Gara 72 buche):
+      // etichetta presa dal descrittore COMPETITION_FORMATS.
+      const fmt = COMPETITION_FORMATS[gara];
+      const roundDesc = fmt ? fmt.rounds.find((r) => r.id === giornata) : null;
+      title = roundDesc ? roundDesc.label : '';
     }
 
     $('#titolo_giornata').html(title);

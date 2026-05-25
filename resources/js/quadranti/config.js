@@ -36,7 +36,11 @@ export const DEFAULT_CONFIG = {
 
 export const COMPETITION_TYPES = {
   GARA_54: 'Gara 54 buche',
-  GARA_36: 'Gara 36 buche'
+  GARA_72: 'Gara 72 buche',
+  PATROCINIO: 'Gara con patrocinio FIG',
+  TROFEO_GIOVANILE: 'Trofeo Giovanile Federale',
+  GARA_GIOVANILE: 'Gara Giovanile',
+  TEODORO_SOLDATI: 'Teodoro Soldati'
 };
 
 export const TEE_TYPES = {
@@ -51,7 +55,112 @@ export const ROUND_TYPES = {
   // Giro finale 54 buche: tee unico, ordine di classifica, sempre numerico.
   // Struttura a 3 blocchi (back-half U → donne → front-half U) descritta in
   // generateSingleTee. Visibile solo quando garaNT === 'Gara 54 buche'.
-  FINAL: 'finale'
+  FINAL: 'finale',
+  // Giri 3 e 4 della Gara 72 buche: entrambi usano il template del giro
+  // finale. Il 4° giro è SOLO uomini (le donne giocano 54 buche = 3 giri).
+  // Vedi COMPETITION_FORMATS['Gara 72 buche'].
+  THIRD: 'terzo',
+  FOURTH: 'quarto'
+};
+
+/**
+ * ════════════════════════════════════════════════════════════════════════
+ * COMPETITION_FORMATS — tabella delle caratteristiche delle gare.
+ *
+ * Tabella di SOLI DATI: per ogni formato elenca i giri, e per ogni giro
+ * descrive COME sono disposti i quadranti. È il descrittore che pilota il
+ * motore di rendering — nessuna procedura per-formato cablata nel codice.
+ *
+ * CAMPI DI OGNI GIRO (round):
+ *   - id        chiave interna del giro (combacia con ROUND_TYPES)
+ *   - label     etichetta mostrata all'utente
+ *   - type      'qualifying' = campo pieno ; 'finale' = campo ridotto post-taglio
+ *   - gender    'both' = uomini + donne ; 'men' = solo uomini
+ *   - tee       varianti tee ammesse: 'double' e/o 'single'
+ *   - forma     forma dei quadranti:
+ *                 'U'  = U dritta      (cerchio / clessidra dei giri 54/72)
+ *                 'UR' = U rovesciata ∩ (giovanili, patrocinate 2° giro, finale)
+ *   - verso     senso di percorrenza dei quadranti:
+ *                 'clockwise'      = sinistra → destra
+ *                 'anti-clockwise' = destra → sinistra
+ *   - reversed  true = terzetto interno invertito (3·2·1 invece di 1·2·3)
+ *
+ * CAMPI DI OGNI FORMATO:
+ *   - label     nome esteso mostrato all'utente
+ *   - cutAfter  numero di giri di qualificazione dopo cui scatta il taglio
+ *               (null = nessun taglio)
+ *   - rounds    sequenza ordinata dei giri
+ *
+ * Conteggi incompleti (difference): regola in MODELLO_QUADRANTI.md §3.1.
+ * Numerazione flight: regola unica in assegnaFlightUnificato (quadranti-logic.js)
+ * — Tee 1 continuo poi Tee 10, contatori uomini/donne separati.
+ *
+ * NOTA: la "Gara 36 buche" è stata RIMOSSA — sostituita dalle Gare con
+ * patrocinio FIG, che hanno lo stesso schema a 2 giri.
+ * ════════════════════════════════════════════════════════════════════════
+ */
+export const COMPETITION_FORMATS = {
+  // 54 / 72 buche: 1° giro U clockwise (cerchio), 2° giro U anti-clockwise
+  // (clessidra). Algoritmo dei quadranti storico, invariato.
+  'Gara 54 buche': {
+    label: 'Gara 54 buche (54/54)',
+    cutAfter: 2,
+    rounds: [
+      { id: 'prima',   label: '1° giro',          type: 'qualifying', gender: 'both', tee: ['double', 'single'], forma: 'U',  verso: 'clockwise',      reversed: false },
+      { id: 'seconda', label: '2° giro',          type: 'qualifying', gender: 'both', tee: ['double', 'single'], forma: 'U',  verso: 'anti-clockwise', reversed: false },
+      { id: 'finale',  label: '3° giro (finale)', type: 'finale',     gender: 'both', tee: ['double', 'single'], forma: 'UR', verso: 'clockwise',      reversed: true }
+    ]
+  },
+
+  'Gara 72 buche': {
+    label: 'Gara 72 buche (uomini 72 / donne 54)',
+    cutAfter: 2,
+    rounds: [
+      { id: 'prima',   label: '1° giro',                  type: 'qualifying', gender: 'both', tee: ['double', 'single'], forma: 'U',  verso: 'clockwise',      reversed: false },
+      { id: 'seconda', label: '2° giro',                  type: 'qualifying', gender: 'both', tee: ['double', 'single'], forma: 'U',  verso: 'anti-clockwise', reversed: false },
+      { id: 'terzo',   label: '3° giro (finale)',         type: 'finale',     gender: 'both', tee: ['double', 'single'], forma: 'UR', verso: 'clockwise',      reversed: true },
+      { id: 'quarto',  label: '4° giro (finale, uomini)', type: 'finale',     gender: 'men',  tee: ['double', 'single'], forma: 'UR', verso: 'clockwise',      reversed: true }
+    ]
+  },
+
+  // Gare con patrocinio FIG (sostituiscono la Gara 36 buche):
+  // 1° giro U clockwise; 2° giro "per classifica" UR clockwise reversed.
+  'Gara con patrocinio FIG': {
+    label: 'Gara con patrocinio FIG (2 giri)',
+    cutAfter: null,
+    rounds: [
+      { id: 'prima',   label: '1° giro',                  type: 'qualifying', gender: 'both', tee: ['double', 'single'], forma: 'U',  verso: 'clockwise', reversed: false },
+      { id: 'seconda', label: '2° giro (per classifica)', type: 'qualifying', gender: 'both', tee: ['double', 'single'], forma: 'UR', verso: 'clockwise', reversed: true }
+    ]
+  },
+
+  // Trofei Giovanili Federali: stesso schema delle Gare con patrocinio FIG.
+  'Trofeo Giovanile Federale': {
+    label: 'Trofeo Giovanile Federale (2 giri)',
+    cutAfter: null,
+    rounds: [
+      { id: 'prima',   label: '1° giro',                  type: 'qualifying', gender: 'both', tee: ['double', 'single'], forma: 'U',  verso: 'clockwise', reversed: false },
+      { id: 'seconda', label: '2° giro (per classifica)', type: 'qualifying', gender: 'both', tee: ['double', 'single'], forma: 'UR', verso: 'clockwise', reversed: true }
+    ]
+  },
+
+  // Gara Giovanile: giro unico, quadranti a U rovesciata, doppio tee.
+  'Gara Giovanile': {
+    label: 'Gara Giovanile (giro unico)',
+    cutAfter: null,
+    rounds: [
+      { id: 'prima', label: 'Giro unico', type: 'qualifying', gender: 'both', tee: ['double'], forma: 'UR', verso: 'clockwise', reversed: false }
+    ]
+  },
+
+  // Teodoro Soldati: stesso schema della Gara Giovanile.
+  'Teodoro Soldati': {
+    label: 'Teodoro Soldati (giro unico)',
+    cutAfter: null,
+    rounds: [
+      { id: 'prima', label: 'Giro unico', type: 'qualifying', gender: 'both', tee: ['double'], forma: 'UR', verso: 'clockwise', reversed: false }
+    ]
+  }
 };
 
 export const COMPACT_TYPES = {

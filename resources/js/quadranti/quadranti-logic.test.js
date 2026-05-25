@@ -18,7 +18,7 @@ beforeAll(() => {
 });
 
 import { QuadrantiLogic, mergeFedergolfResponses, normalizeGaraTitle } from './quadranti-logic.js';
-import { DEFAULT_CONFIG } from './config.js';
+import { DEFAULT_CONFIG, COMPETITION_FORMATS } from './config.js';
 import { storage } from './utils.js';
 
 // Helper: pulisce le sole chiavi di storage che generateSingleTee/Double Tee
@@ -816,40 +816,40 @@ describe('generateSingleTee — giro finale 54 buche', () => {
     expect(row9).toContain('>52<');
   });
 
-  it('blocco 2 = donne, primo gruppo (25-27), ultimo (1-3) → leader donne ultime', () => {
+  it('blocco 2 = front-half uomini, primo gruppo (25-27), ultimo (1-3) → leader uomini ultimi', () => {
     const html = logic.generateSingleTee('finale');
     const bodyHtml = html.split('<tbody>')[1] || '';
     const rows = bodyHtml.split('</tr>').slice(0, -1);
-    // Prima riga donne è la 10° flight (index 9)
+    // Prima riga front-half uomini è la 10° flight (index 9)
     const row10 = rows[9];
-    expect(row10).toContain('color:red');
+    expect(row10).not.toContain('color:red');
     expect(row10).toContain('>27<');
     expect(row10).toContain('>26<');
     expect(row10).toContain('>25<');
-    // Ultima riga donne è la 18° flight (index 17)
+    // Ultima riga front-half uomini è la 18° flight (index 17) → leader 1,2,3
     const row18 = rows[17];
-    expect(row18).toContain('color:red');
+    expect(row18).not.toContain('color:red');
     expect(row18).toContain('>3<');
     expect(row18).toContain('>2<');
     expect(row18).toContain('>1<');
   });
 
-  it('blocco 3 = front-half uomini, primo (25-27) ultimo (1-3) → leader uomini ultimi', () => {
+  it('blocco 3 = donne, primo gruppo (25-27), ultimo (1-3) → leader donne a chiusura', () => {
     const html = logic.generateSingleTee('finale');
     const bodyHtml = html.split('<tbody>')[1] || '';
     const rows = bodyHtml.split('</tr>').slice(0, -1);
-    // 19° flight (index 18) = primo gruppo front-half
+    // 19° flight (index 18) = primo gruppo donne
     const row19 = rows[18];
     expect(row19).toContain('>27<');
     expect(row19).toContain('>26<');
     expect(row19).toContain('>25<');
-    expect(row19).not.toContain('color:red');
-    // 27° flight (index 26) = ultimo gruppo front-half = leader 1,2,3
+    expect(row19).toContain('color:red');
+    // 27° flight (index 26) = ultimo gruppo donne = leader donne 1,2,3
     const row27 = rows[26];
     expect(row27).toContain('>3<');
     expect(row27).toContain('>2<');
     expect(row27).toContain('>1<');
-    expect(row27).not.toContain('color:red');
+    expect(row27).toContain('color:red');
   });
 
   it('orari: blocco 1 da 08:00 a 09:28 (con gap 11)', () => {
@@ -862,7 +862,7 @@ describe('generateSingleTee — giro finale 54 buche', () => {
   it('orari: stacco extra tra blocco 1 e blocco 2 → blocco 2 inizia 09:45 (non 09:39)', () => {
     const html = logic.generateSingleTee('finale');
     expect(html).toContain('>09:45<');
-    // Verifica che NON ci sia il flight delle donne a 09:39 (sarebbe senza stacco)
+    // Verifica che il 2° blocco non parta a 09:39 (sarebbe senza stacco)
     const bodyHtml = html.split('<tbody>')[1] || '';
     const row10 = bodyHtml.split('</tr>')[9];
     expect(row10).toContain('>09:45<');
@@ -871,9 +871,9 @@ describe('generateSingleTee — giro finale 54 buche', () => {
   it('orari: stacco extra tra blocco 2 e blocco 3 → blocco 3 inizia 11:30 (non 11:24)', () => {
     const html = logic.generateSingleTee('finale');
     expect(html).toContain('>11:30<');
-    // Ultimo flight donne (riga 18): 09:45 + 8*11 = 11:13 ✓
+    // Ultimo flight del 2° blocco (riga 18): 09:45 + 8*11 = 11:13 ✓
     expect(html).toContain('>11:13<');
-    // Ultimo flight uomini front (riga 27): 11:30 + 8*11 = 12:58 ✓
+    // Ultimo flight del 3° blocco (riga 27): 11:30 + 8*11 = 12:58 ✓
     expect(html).toContain('>12:58<');
   });
 
@@ -903,18 +903,18 @@ describe('generateSingleTee — giro finale 54 buche', () => {
     expect(html).not.toContain('qd-remove');
   });
 
-  it('se garaNT != "Gara 54 buche", round=finale ricade nella logica normale (no crash)', () => {
-    const logic36 = makeLogic({
+  it('garaNT senza giro "finale": round=finale ricade nella logica normale (no crash)', () => {
+    const logicNoFin = makeLogic({
       players: 12,
       proette: 6,
       playersPerFlight: 3,
       nominativo: 'Off',
-      garaNT: 'Gara 36 buche',
+      garaNT: 'Gara con patrocinio FIG',
       startTime: '08:00',
       gap: '00:10',
     });
-    // 'finale' su 36 buche → ricade nel ramo seconda (l'unico altro ramo)
-    expect(() => logic36.generateSingleTee('finale')).not.toThrow();
+    // 'finale' su un formato che non lo prevede → ramo normale, nessun crash
+    expect(() => logicNoFin.generateSingleTee('finale')).not.toThrow();
   });
 
   it('senza donne (proette=0) i blocchi sono solo 2: back-half U + front-half U', () => {
@@ -934,7 +934,7 @@ describe('generateSingleTee — giro finale 54 buche', () => {
     const trCount = (bodyHtml.match(/<tr>/g) || []).length;
     expect(trCount).toBe(18); // 9 back + 9 front
     expect(html).not.toContain('color:red');
-    // Stacco singolo: tra blocco1 e blocco3 → blocco3 inizia a 09:28 + 17 min = 09:45
+    // Stacco singolo tra i 2 blocchi maschili → il 2° blocco inizia a 09:28 + 17 min = 09:45
     expect(html).toContain('>09:45<');
   });
 
@@ -1362,7 +1362,7 @@ describe('Striscia FIG — quadrantRange / figQuadranti / generateFigStrip', () 
   });
 
   describe('figQuadranti popolato dal giro finale tee unico (3 blocchi)', () => {
-    it('54U + 27D → blocco 1, blocco 2 (donne), blocco 3', () => {
+    it('54U + 27D → blocco 1 (back uomini), blocco 2 (front uomini), blocco 3 (donne)', () => {
       const l = makeLogic({
         players: 144, proette: 48, playersCut: 54, proetteCut: 27,
         playersPerFlight: 3, garaNT: 'Gara 54 buche',
@@ -1372,8 +1372,8 @@ describe('Striscia FIG — quadrantRange / figQuadranti / generateFigStrip', () 
       l.generateSingleTee('finale');
       const labels = l.figQuadranti.map(q => q.label);
       expect(labels).toContain('Blocco 1 · back-half');
-      expect(labels).toContain('Blocco 2');
-      expect(labels).toContain('Blocco 3 · front-half');
+      expect(labels).toContain('Blocco 2 · front-half');
+      expect(labels).toContain('Blocco 3');
     });
   });
 
@@ -1532,7 +1532,7 @@ describe('Vista FIG — generateFigComparison', () => {
     storage.set('atlete', Array.from({ length: 6 }, (_, i) => `Atleta${i + 1}`));
     const logicNom = makeLogic({
       players: 12, proette: 6, playersPerFlight: 3, nominativo: 'On',
-      garaNT: 'Gara 36 buche', doppiePartenze: 'Doppie Partenze',
+      garaNT: 'Gara 72 buche', doppiePartenze: 'Doppie Partenze',
       compatto: 'Early/Late', startTime: '08:00', gap: '00:10', round: '04:30',
     });
     const html = logicNom.generateFigComparison();
@@ -1540,10 +1540,10 @@ describe('Vista FIG — generateFigComparison', () => {
     expect(html).toContain('Atleta1');
   });
 
-  it('funziona in modalità numerica con il giro a 36 buche', () => {
+  it('funziona in modalità numerica con un giro di qualificazione', () => {
     const l36 = makeLogic({
       players: 54, proette: 0, playersPerFlight: 3,
-      garaNT: 'Gara 36 buche', doppiePartenze: 'Doppie Partenze',
+      garaNT: 'Gara 72 buche', doppiePartenze: 'Doppie Partenze',
       compatto: 'Early/Late', startTime: '08:00', gap: '00:10', round: '04:30',
       nominativo: 'Off',
     });
@@ -1630,5 +1630,501 @@ describe('REGRESSIONE — normalizeGaraTitle (raggruppamento dropdown M+F)', () 
     const chiaveB = `${normalizeGaraTitle(garaB.title)}_${garaB.date}`;
 
     expect(chiaveA).not.toBe(chiaveB);
+  });
+});
+
+// ─── GOLDEN SNAPSHOT — rete di regressione giri di qualificazione/finale ─────
+// Questi snapshot congelano l'HTML COMPLETO prodotto da generateDoubleTee e
+// generateSingleTee per la Gara 54 buche e per i giri di qualificazione
+// (resi con lo stesso motore del 72 buche), più la striscia/Vista FIG.
+//
+// SCOPO: sono la rete di sicurezza richiesta PRIMA del refactor data-driven
+// del dispatch formato/giro. Il refactor sostituirà i check cablati
+// (garaNT === 'Gara 54 buche', round === 'finale') con una lettura dalla
+// tabella COMPETITION_FORMATS. L'algoritmo dei quadranti NON deve cambiare:
+// se dopo il refactor `npm test` resta verde, il 54/36 è rimasto identico.
+//
+// FUNZIONAMENTO: al primo `npm test` Vitest CREA il file
+//   __snapshots__/quadranti-logic.test.js.snap
+// (sempre verde la prima volta). Va committato: da quel momento è il
+// riferimento immutabile. Ogni modifica che alteri l'output 54/36 farà
+// fallire questi test indicando ESATTAMENTE dove l'HTML è cambiato.
+//
+// Per ri-generare di proposito gli snapshot dopo una modifica VOLUTA:
+//   npx vitest run -u   (oppure `npm test -- -u`)
+describe('GOLDEN SNAPSHOT — formati 54/36 buche (pre-refactor data-driven)', () => {
+  // Config canonici: TUTTI i campi rilevanti sono espliciti, così gli
+  // snapshot non dipendono da eventuali variazioni di DEFAULT_CONFIG.
+  const cfg54Double = {
+    players: 144, proette: 48, playersPerFlight: 3, nominativo: 'Off',
+    garaNT: 'Gara 54 buche', doppiePartenze: 'Doppie Partenze',
+    compatto: 'Early/Late', startTime: '08:00', gap: '00:10', round: '04:30',
+    playersCut: 0, proetteCut: 0,
+  };
+  const cfg54Final = { ...cfg54Double, playersCut: 54, proetteCut: 27 };
+  const cfg72Quals = { ...cfg54Double, garaNT: 'Gara 72 buche', players: 108, proette: 36 };
+
+  beforeEach(() => { resetPlayerStorage(); });
+
+  describe('generateDoubleTee — HTML completo', () => {
+    it('54 buche · prima', () => {
+      expect(makeLogic(cfg54Double).generateDoubleTee('prima')).toMatchSnapshot();
+    });
+    it('54 buche · seconda', () => {
+      expect(makeLogic(cfg54Double).generateDoubleTee('seconda')).toMatchSnapshot();
+    });
+    it('54 buche · finale (doppio tee)', () => {
+      expect(makeLogic(cfg54Final).generateDoubleTee('finale')).toMatchSnapshot();
+    });
+    it('54 buche · prima · senza donne', () => {
+      expect(makeLogic({ ...cfg54Double, proette: 0 }).generateDoubleTee('prima')).toMatchSnapshot();
+    });
+    it('72 buche · qualificazione prima', () => {
+      expect(makeLogic(cfg72Quals).generateDoubleTee('prima')).toMatchSnapshot();
+    });
+    it('72 buche · qualificazione seconda', () => {
+      expect(makeLogic(cfg72Quals).generateDoubleTee('seconda')).toMatchSnapshot();
+    });
+  });
+
+  describe('generateSingleTee — HTML completo', () => {
+    it('54 buche · prima', () => {
+      expect(makeLogic(cfg54Double).generateSingleTee('prima')).toMatchSnapshot();
+    });
+    it('54 buche · seconda', () => {
+      expect(makeLogic(cfg54Double).generateSingleTee('seconda')).toMatchSnapshot();
+    });
+    it('54 buche · finale (3 blocchi, tee unico)', () => {
+      expect(makeLogic(cfg54Final).generateSingleTee('finale')).toMatchSnapshot();
+    });
+    it('54 buche · finale · senza donne', () => {
+      expect(makeLogic({ ...cfg54Final, proette: 0, proetteCut: 0 }).generateSingleTee('finale')).toMatchSnapshot();
+    });
+    it('72 buche · qualificazione prima', () => {
+      expect(makeLogic(cfg72Quals).generateSingleTee('prima')).toMatchSnapshot();
+    });
+    it('72 buche · qualificazione seconda', () => {
+      expect(makeLogic(cfg72Quals).generateSingleTee('seconda')).toMatchSnapshot();
+    });
+  });
+
+  describe('figQuadranti — striscia FIG (stato interno)', () => {
+    it('54 buche · doppio tee · prima', () => {
+      const l = makeLogic(cfg54Double);
+      l.generateDoubleTee('prima');
+      expect(JSON.stringify(l.figQuadranti, null, 1)).toMatchSnapshot();
+    });
+    it('54 buche · doppio tee · seconda', () => {
+      const l = makeLogic(cfg54Double);
+      l.generateDoubleTee('seconda');
+      expect(JSON.stringify(l.figQuadranti, null, 1)).toMatchSnapshot();
+    });
+    it('54 buche · finale doppio tee', () => {
+      const l = makeLogic(cfg54Final);
+      l.generateDoubleTee('finale');
+      expect(JSON.stringify(l.figQuadranti, null, 1)).toMatchSnapshot();
+    });
+    it('54 buche · finale tee unico', () => {
+      const l = makeLogic(cfg54Final);
+      l.generateSingleTee('finale');
+      expect(JSON.stringify(l.figQuadranti, null, 1)).toMatchSnapshot();
+    });
+  });
+
+  describe('generateFigStrip / generateFigComparison — HTML completo', () => {
+    it('generateFigStrip · 54 buche finale doppio tee', () => {
+      const l = makeLogic(cfg54Final);
+      l.generateDoubleTee('finale');
+      expect(l.generateFigStrip()).toMatchSnapshot();
+    });
+    it('generateFigComparison · 54 buche', () => {
+      expect(makeLogic(cfg54Double).generateFigComparison()).toMatchSnapshot();
+    });
+  });
+});
+
+// ─── MODELLO DATA-DRIVEN — descrittore COMPETITION_FORMATS ───────────────────
+// Verifica la struttura della tabella che pilota il dispatch formato/giro.
+describe('COMPETITION_FORMATS — descrittore dei formati di gara', () => {
+  it('contiene i 6 formati attesi (Gara 36 rimossa)', () => {
+    [
+      'Gara 54 buche', 'Gara 72 buche', 'Gara con patrocinio FIG',
+      'Trofeo Giovanile Federale', 'Gara Giovanile', 'Teodoro Soldati',
+    ].forEach((k) => {
+      expect(COMPETITION_FORMATS[k]).toBeDefined();
+      expect(Array.isArray(COMPETITION_FORMATS[k].rounds)).toBe(true);
+    });
+    // 'Gara 36 buche' è stata sostituita dalle Gare con patrocinio FIG.
+    expect(COMPETITION_FORMATS['Gara 36 buche']).toBeUndefined();
+  });
+
+  it('Gara 54 buche: 3 giri, il 3° è finale per entrambi i sessi', () => {
+    const f = COMPETITION_FORMATS['Gara 54 buche'];
+    expect(f.rounds).toHaveLength(3);
+    expect(f.rounds[2].type).toBe('finale');
+    expect(f.rounds[2].gender).toBe('both');
+  });
+
+  it('Gara 72 buche: 4 giri, 3°/4° finale, 4° riservato agli uomini', () => {
+    const f = COMPETITION_FORMATS['Gara 72 buche'];
+    expect(f.rounds).toHaveLength(4);
+    expect(f.rounds.map((r) => r.id)).toEqual(['prima', 'seconda', 'terzo', 'quarto']);
+    expect(f.rounds[2].type).toBe('finale');
+    expect(f.rounds[2].gender).toBe('both');
+    expect(f.rounds[3].type).toBe('finale');
+    expect(f.rounds[3].gender).toBe('men');
+  });
+
+  it('Gara Giovanile: giro unico, di qualificazione', () => {
+    const f = COMPETITION_FORMATS['Gara Giovanile'];
+    expect(f.rounds).toHaveLength(1);
+    expect(f.rounds[0].type).toBe('qualifying');
+  });
+
+  it('patrocinio / trofeo: 2 giri, nessun giro finale', () => {
+    ['Gara con patrocinio FIG', 'Trofeo Giovanile Federale']
+      .forEach((k) => {
+        const f = COMPETITION_FORMATS[k];
+        expect(f.rounds).toHaveLength(2);
+        expect(f.rounds.every((r) => r.type === 'qualifying')).toBe(true);
+      });
+  });
+
+  it('ogni giro ha forma (U/UR) e verso (clockwise/anti-clockwise)', () => {
+    Object.values(COMPETITION_FORMATS).forEach((fmt) => {
+      fmt.rounds.forEach((r) => {
+        expect(['U', 'UR']).toContain(r.forma);
+        expect(['clockwise', 'anti-clockwise']).toContain(r.verso);
+        expect(typeof r.reversed).toBe('boolean');
+      });
+    });
+  });
+});
+
+// ─── GIRO FINALE TEE UNICO — ordine dei blocchi confermato ───────────────────
+// Ordine di partenza confermato (schema FIG): uomini back-half → uomini
+// front-half → donne. Test esplicito: documenta il cambiamento di ordine
+// rispetto alla versione precedente (che metteva le donne in mezzo).
+describe('Giro finale tee unico — ordine blocchi (uomini back → uomini front → donne)', () => {
+  beforeEach(() => { resetPlayerStorage(); });
+
+  const cfgFinale = {
+    players: 144, proette: 48, playersCut: 54, proetteCut: 27,
+    playersPerFlight: 3, garaNT: 'Gara 54 buche', doppiePartenze: 'Tee Unico',
+    nominativo: 'Off', startTime: '08:00', gap: '00:11', round: '04:30',
+  };
+
+  it('figQuadranti ha 3 blocchi nell’ordine back-half, front-half, donne', () => {
+    const l = makeLogic(cfgFinale);
+    l.generateSingleTee('finale');
+    expect(l.figQuadranti).toHaveLength(3);
+    expect(l.figQuadranti[0].categoria).toBe('Uomini');
+    expect(l.figQuadranti[0].label).toContain('back-half');
+    expect(l.figQuadranti[1].categoria).toBe('Uomini');
+    expect(l.figQuadranti[1].label).toContain('front-half');
+    expect(l.figQuadranti[2].categoria).toBe('Donne');
+  });
+
+  it('blocco 1 = ranghi 28-54; blocco 2 = ranghi 1-27; blocco 3 donne 1-27', () => {
+    const l = makeLogic(cfgFinale);
+    l.generateSingleTee('finale');
+    // back-half: 54 qualificati, front 27 flight → back = rank 28..54
+    expect(l.figQuadranti[0].first).toBe(28);
+    expect(l.figQuadranti[0].last).toBe(54);
+    // front-half decrescente: 27 → 1
+    expect(l.figQuadranti[1].first).toBe(27);
+    expect(l.figQuadranti[1].last).toBe(1);
+    // donne decrescente: 27 → 1
+    expect(l.figQuadranti[2].first).toBe(27);
+    expect(l.figQuadranti[2].last).toBe(1);
+  });
+
+  it('le donne chiudono il giro: nessun blocco maschile dopo le donne', () => {
+    const l = makeLogic(cfgFinale);
+    l.generateSingleTee('finale');
+    // ultimo blocco = Donne
+    expect(l.figQuadranti[l.figQuadranti.length - 1].categoria).toBe('Donne');
+  });
+});
+
+// ─── NUOVI FORMATI — Gara 72 buche ───────────────────────────────────────────
+describe('Gara 72 buche — giri 3 e 4 (finale), 4° solo uomini', () => {
+  beforeEach(() => { resetPlayerStorage(); });
+
+  const cfg72 = {
+    players: 144, proette: 48, playersCut: 54, proetteCut: 27,
+    playersPerFlight: 3, garaNT: 'Gara 72 buche', nominativo: 'Off',
+    compatto: 'Early/Late', startTime: '08:00', gap: '00:11', round: '04:30',
+  };
+
+  it('giro di qualificazione (prima) identico a quello della Gara 54 buche', () => {
+    const base = {
+      players: 144, proette: 48, playersPerFlight: 3, nominativo: 'Off',
+      doppiePartenze: 'Doppie Partenze', compatto: 'Early/Late',
+      startTime: '08:00', gap: '00:10', round: '04:30',
+    };
+    const h54 = makeLogic({ ...base, garaNT: 'Gara 54 buche' }).generateDoubleTee('prima');
+    const h72 = makeLogic({ ...base, garaNT: 'Gara 72 buche' }).generateDoubleTee('prima');
+    expect(h72).toBe(h54);
+  });
+
+  it('3° giro doppio tee → finale con uomini E donne', () => {
+    const l = makeLogic({ ...cfg72, doppiePartenze: 'Doppie Partenze' });
+    const html = l.generateDoubleTee('terzo');
+    expect(html).toContain('<table>');
+    const categorie = l.figQuadranti.map((q) => q.categoria);
+    expect(categorie).toContain('Uomini');
+    expect(categorie).toContain('Donne');
+  });
+
+  it('4° giro doppio tee → finale SOLO uomini (nessuna donna)', () => {
+    const l = makeLogic({ ...cfg72, doppiePartenze: 'Doppie Partenze' });
+    l.generateDoubleTee('quarto');
+    expect(l.figQuadranti.length).toBeGreaterThan(0);
+    expect(l.figQuadranti.every((q) => q.categoria === 'Uomini')).toBe(true);
+  });
+
+  it('3° giro tee unico → 3 blocchi (back, front, donne)', () => {
+    const l = makeLogic({ ...cfg72, doppiePartenze: 'Tee Unico' });
+    l.generateSingleTee('terzo');
+    expect(l.figQuadranti).toHaveLength(3);
+    expect(l.figQuadranti[2].categoria).toBe('Donne');
+  });
+
+  it('4° giro tee unico → solo blocchi maschili, nessuna donna', () => {
+    const l = makeLogic({ ...cfg72, doppiePartenze: 'Tee Unico' });
+    l.generateSingleTee('quarto');
+    expect(l.figQuadranti.length).toBeGreaterThan(0);
+    expect(l.figQuadranti.every((q) => q.categoria === 'Uomini')).toBe(true);
+  });
+});
+
+// ─── NUOVI FORMATI — Gara Giovanile, Patrocinio FIG, Trofeo Giovanile ────────
+describe('Nuovi formati — giovanili, patrocinio FIG, trofei', () => {
+  beforeEach(() => { resetPlayerStorage(); });
+
+  it('Gara Giovanile: giro unico, NON è un giro finale', () => {
+    const l = makeLogic({
+      garaNT: 'Gara Giovanile', players: 30, proette: 12, playersPerFlight: 3,
+      doppiePartenze: 'Tee Unico', nominativo: 'Off',
+      compatto: 'Early/Late', startTime: '08:00', gap: '00:10', round: '04:30',
+    });
+    const html = l.generateSingleTee('prima');
+    expect(html).toContain('<tbody>');
+    // 'prima' è un giro di qualificazione → quadranti Q1-Q4, niente 'Blocco'
+    expect(l.figQuadranti.some((q) => /Blocco/.test(q.label))).toBe(false);
+  });
+
+  it('Gara con patrocinio FIG: 1° giro qualificazione, 2° giro per classifica', () => {
+    const l = makeLogic({
+      garaNT: 'Gara con patrocinio FIG', players: 60, proette: 24,
+      playersPerFlight: 3, doppiePartenze: 'Doppie Partenze', nominativo: 'Off',
+      compatto: 'Early/Late', startTime: '08:00', gap: '00:10', round: '04:30',
+    });
+    expect(l.generateDoubleTee('prima')).toContain('<table>');
+    expect(l.generateDoubleTee('seconda')).toContain('<table>');
+  });
+
+  it('Trofeo Giovanile Federale: 2 giri di qualificazione', () => {
+    const l = makeLogic({
+      garaNT: 'Trofeo Giovanile Federale', players: 45, proette: 18,
+      playersPerFlight: 3, doppiePartenze: 'Doppie Partenze', nominativo: 'Off',
+      compatto: 'Early/Late', startTime: '08:00', gap: '00:10', round: '04:30',
+    });
+    expect(l.generateDoubleTee('prima')).toContain('<table>');
+    expect(l.generateDoubleTee('seconda')).toContain('<table>');
+  });
+});
+
+// ─── QUADRANTI A U ROVESCIATA (forma 'UR') — giovanili / patrocinate ─────────
+// I formati giovanili/patrocinate hanno i quadranti a forma 'UR' (∩): ogni
+// blocco è un intervallo spezzato a metà — metà bassa su Tee 1 (righe
+// decrescenti), metà alta su Tee 10 (righe crescenti).
+// Vedi COMPETITION_FORMATS[...].rounds[...].forma / verso / reversed.
+describe('Quadranti a U rovesciata (forma UR) — giovanili / patrocinate', () => {
+  beforeEach(() => { resetPlayerStorage(); });
+
+  // Numeri delle celle-giocatore nell'ordine di render (salta Flight/Tee/Orario).
+  const playerCells = (html) => {
+    const body = html.split('<tbody>')[1] || '';
+    return (body.match(/style="color:[^"]*">(\d+)/g) || [])
+      .map((m) => parseInt(m.match(/>(\d+)/)[1], 10));
+  };
+
+  it('descrittore: forma e reversed corretti per ogni formato', () => {
+    const round = (g, i) => COMPETITION_FORMATS[g].rounds[i];
+    expect(round('Gara Giovanile', 0).forma).toBe('UR');
+    expect(round('Gara Giovanile', 0).reversed).toBe(false);
+    expect(round('Teodoro Soldati', 0).forma).toBe('UR');
+    expect(round('Gara con patrocinio FIG', 0).forma).toBe('U');
+    expect(round('Gara con patrocinio FIG', 1).forma).toBe('UR');
+    expect(round('Gara con patrocinio FIG', 1).reversed).toBe(true);
+    expect(round('Trofeo Giovanile Federale', 1).reversed).toBe(true);
+    // I giri 54/72 di qualificazione restano forma 'U'.
+    expect(round('Gara 54 buche', 0).forma).toBe('U');
+    expect(round('Gara 54 buche', 0).verso).toBe('clockwise');
+    expect(round('Gara 54 buche', 1).verso).toBe('anti-clockwise');
+  });
+
+  it('Gara Giovanile: 3 blocchi ∩ — uomini Early, donne, uomini Late', () => {
+    const l = makeLogic({
+      garaNT: 'Gara Giovanile', players: 90, proette: 42, playersPerFlight: 3,
+      nominativo: 'Off', startTime: '08:00', gap: '00:10', round: '04:30',
+    });
+    const html = l.generateDoubleTee('prima');
+    expect(html).toContain('<table>');
+    expect(l.figQuadranti).toHaveLength(6); // 3 blocchi × 2 tee
+    expect(l.figQuadranti[0].categoria).toBe('Uomini'); // Early
+    expect(l.figQuadranti[2].categoria).toBe('Donne');
+    expect(l.figQuadranti[4].categoria).toBe('Uomini'); // Late
+  });
+
+  it('Gara Giovanile: split uomini bilanciato → Early 25-90, Late 1-24 (schema fornito)', () => {
+    // 90 uomini / 42 donne: lo schema fornito → Early uomini 25-90, Late 1-24.
+    const l = makeLogic({
+      garaNT: 'Gara Giovanile', players: 90, proette: 42, playersPerFlight: 3,
+      nominativo: 'Off', startTime: '08:00', gap: '00:10', round: '04:30',
+    });
+    l.generateDoubleTee('prima');
+    const range = (i) => [l.figQuadranti[i].first, l.figQuadranti[i].last];
+    // Blocco 1 = uomini Early: copre i ranghi 25-90
+    const b1 = [...range(0), ...range(1)];
+    expect(Math.min(...b1)).toBe(25);
+    expect(Math.max(...b1)).toBe(90);
+    // Blocco 3 = uomini Late: copre i ranghi 1-24
+    const b3 = [...range(4), ...range(5)];
+    expect(Math.min(...b3)).toBe(1);
+    expect(Math.max(...b3)).toBe(24);
+  });
+
+  it('Gara Giovanile: nessun buco — i due tee di ogni blocco uomini bilanciati', () => {
+    // 90 uomini / 48 donne: (30+16 flight)/2 = 23, dispari → Early arrotondato
+    // a 22 flight (pari), così Tee 1 e Tee 10 si dividono equamente.
+    const l = makeLogic({
+      garaNT: 'Gara Giovanile', players: 90, proette: 48, playersPerFlight: 3,
+      nominativo: 'Off', startTime: '08:00', gap: '00:10', round: '04:30',
+    });
+    l.generateDoubleTee('prima');
+    const span = (q) => Math.abs(q.last - q.first) + 1;
+    // Blocco 1 (Early uomini): Tee 1 e Tee 10 stessa ampiezza → niente buco
+    expect(span(l.figQuadranti[0])).toBe(span(l.figQuadranti[1]));
+    // Blocco 3 (Late uomini): idem
+    expect(span(l.figQuadranti[4])).toBe(span(l.figQuadranti[5]));
+  });
+
+  it('Gara Giovanile: tra Early e Late intercorre il mezzo giro (attraversamento)', () => {
+    // round 04:30 → mezzo giro 02:15. Early finisce di partire alle 09:50,
+    // quindi il primo blocco Late (donne) parte alle 12:05, non alle 10:00.
+    const l = makeLogic({
+      garaNT: 'Gara Giovanile', players: 90, proette: 48, playersPerFlight: 3,
+      nominativo: 'Off', startTime: '08:00', gap: '00:10', round: '04:30',
+    });
+    const html = l.generateDoubleTee('prima');
+    expect(html).toContain('>12:05<');     // Late parte dopo il mezzo giro
+    expect(html).not.toContain('>10:00<'); // non lo stacco fisso di 10 min
+  });
+
+  it('Patrocinate 2° giro: 4 blocchi ∩ reversed con donne in mezzo', () => {
+    const l = makeLogic({
+      garaNT: 'Gara con patrocinio FIG', players: 12, proette: 12,
+      playersPerFlight: 3, nominativo: 'Off',
+      startTime: '08:00', gap: '00:10', round: '04:30',
+    });
+    const html = l.generateDoubleTee('seconda');
+    expect(html).toContain('<table>');
+    // 4 blocchi × 2 tee = 8 entrate; categorie U,U,D,D,D,D,U,U → donne in mezzo
+    expect(l.figQuadranti).toHaveLength(8);
+    expect(l.figQuadranti.map((q) => q.categoria)).toEqual(
+      ['Uomini', 'Uomini', 'Donne', 'Donne', 'Donne', 'Donne', 'Uomini', 'Uomini']
+    );
+    // Terzetti reversed: primo terzetto Tee 1 = 9·8·7.
+    expect(playerCells(html).slice(0, 3)).toEqual([9, 8, 7]);
+  });
+
+  it('Patrocinate 1° giro: resta cerchio (flusso storico, quadranti Q1-Q4)', () => {
+    const l = makeLogic({
+      garaNT: 'Gara con patrocinio FIG', players: 60, proette: 24,
+      playersPerFlight: 3, nominativo: 'Off', compatto: 'Early/Late',
+      startTime: '08:00', gap: '00:10', round: '04:30',
+    });
+    l.generateDoubleTee('prima');
+    expect(l.figQuadranti.some((q) => q.label === 'Q1')).toBe(true);
+  });
+
+  it('Trofeo Giovanile Federale 2° giro: stesso schema del Patrocinate (4 blocchi)', () => {
+    const l = makeLogic({
+      garaNT: 'Trofeo Giovanile Federale', players: 12, proette: 12,
+      playersPerFlight: 3, nominativo: 'Off',
+      startTime: '08:00', gap: '00:10', round: '04:30',
+    });
+    l.generateDoubleTee('seconda');
+    expect(l.figQuadranti).toHaveLength(8);
+  });
+});
+
+// ─── NUMERAZIONE FLIGHT UNIFICATA — una sola regola per ogni gara ────────────
+// assegnaFlightUnificato: per categoria, prima TUTTI i flight del Tee 1
+// (Early → Late), poi TUTTI quelli del Tee 10. Uomini e donne separati.
+// Elimina i disallineamenti di numerazione in Giovanili, Patrocinate 2° giro
+// e giro finale 54/72 (i tre punti che prima sbagliavano).
+describe('Numerazione flight unificata (Tee 1 continuo, poi Tee 10)', () => {
+  beforeEach(() => { resetPlayerStorage(); });
+
+  const flightNums = (logic, cat, tee) =>
+    logic.figFlights
+      .filter((f) => f.category === cat && f.tee === tee)
+      .map((f) => f.group.flightNumber)
+      .sort((a, b) => a - b);
+  const seq = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
+
+  it('assegnaFlightUnificato: contatori M ed F indipendenti, Tee1 poi Tee10', () => {
+    const l = makeLogic({ playersPerFlight: 3 });
+    const blocchi = [
+      { cat: 'M', tee1: [{}, {}], tee10: [{}, {}] },
+      { cat: 'F', tee1: [{}], tee10: [{}] },
+    ];
+    l.assegnaFlightUnificato(blocchi);
+    expect(blocchi[0].tee1.map((g) => g.flightNumber)).toEqual([1, 2]);
+    expect(blocchi[0].tee10.map((g) => g.flightNumber)).toEqual([3, 4]);
+    expect(blocchi[1].tee1.map((g) => g.flightNumber)).toEqual([1]); // F riparte da 1
+    expect(blocchi[1].tee10.map((g) => g.flightNumber)).toEqual([2]);
+  });
+
+  it('Gara Giovanile: uomini Tee 1 = 1..15, Tee 10 = 16..30 (continui)', () => {
+    const l = makeLogic({
+      garaNT: 'Gara Giovanile', players: 90, proette: 48, playersPerFlight: 3,
+      nominativo: 'Off', startTime: '08:00', gap: '00:10', round: '04:30',
+    });
+    l.generateDoubleTee('prima');
+    expect(flightNums(l, 'M', 1)).toEqual(seq(1, 15));
+    expect(flightNums(l, 'M', 10)).toEqual(seq(16, 30));
+    expect(flightNums(l, 'F', 1)).toEqual(seq(1, 8));
+    expect(flightNums(l, 'F', 10)).toEqual(seq(9, 16));
+  });
+
+  it('Patrocinate 2° giro: numerazione continua Tee 1 poi Tee 10', () => {
+    const l = makeLogic({
+      garaNT: 'Gara con patrocinio FIG', players: 90, proette: 42,
+      playersPerFlight: 3, nominativo: 'Off',
+      startTime: '07:30', gap: '00:11', round: '04:30',
+    });
+    l.generateDoubleTee('seconda');
+    expect(flightNums(l, 'M', 1)).toEqual(seq(1, 15));
+    expect(flightNums(l, 'M', 10)).toEqual(seq(16, 30));
+    expect(flightNums(l, 'F', 1)).toEqual(seq(1, 7));
+    expect(flightNums(l, 'F', 10)).toEqual(seq(8, 14));
+  });
+
+  it('Giro finale 54 buche (doppio tee): numerazione continua Tee 1 poi Tee 10', () => {
+    const l = makeLogic({
+      garaNT: 'Gara 54 buche', players: 144, proette: 48,
+      playersCut: 54, proetteCut: 27, playersPerFlight: 3, nominativo: 'Off',
+      startTime: '08:00', gap: '00:11', round: '04:30',
+    });
+    l.generateDoubleTee('finale');
+    expect(flightNums(l, 'M', 1)).toEqual(seq(1, 9));
+    expect(flightNums(l, 'M', 10)).toEqual(seq(10, 18));
+    expect(flightNums(l, 'F', 1)).toEqual(seq(1, 5));
+    expect(flightNums(l, 'F', 10)).toEqual(seq(6, 9));
   });
 });
