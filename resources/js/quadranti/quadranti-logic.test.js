@@ -1790,11 +1790,13 @@ describe('COMPETITION_FORMATS — descrittore dei formati di gara', () => {
       });
   });
 
-  it('ogni giro ha forma (U/UR) e verso (clockwise/anti-clockwise)', () => {
+  it('ogni giro ha early/late con forma (U/UR) e verso (sn-dx/dx-sn) validi', () => {
     Object.values(COMPETITION_FORMATS).forEach((fmt) => {
       fmt.rounds.forEach((r) => {
-        expect(['U', 'UR']).toContain(r.forma);
-        expect(['clockwise', 'anti-clockwise']).toContain(r.verso);
+        ['early', 'late'].forEach((sez) => {
+          expect(['U', 'UR']).toContain(r[sez].forma);
+          expect(['sn-dx', 'dx-sn']).toContain(r[sez].verso);
+        });
         expect(typeof r.reversed).toBe('boolean');
       });
     });
@@ -1940,7 +1942,7 @@ describe('Nuovi formati — giovanili, patrocinio FIG, trofei', () => {
 // I formati giovanili/patrocinate hanno i quadranti a forma 'UR' (∩): ogni
 // blocco è un intervallo spezzato a metà — metà bassa su Tee 1 (righe
 // decrescenti), metà alta su Tee 10 (righe crescenti).
-// Vedi COMPETITION_FORMATS[...].rounds[...].forma / verso / reversed.
+// Vedi COMPETITION_FORMATS[...].rounds[...].early / late / reversed.
 describe('Quadranti a U rovesciata (forma UR) — giovanili / patrocinate', () => {
   beforeEach(() => { resetPlayerStorage(); });
 
@@ -1951,19 +1953,23 @@ describe('Quadranti a U rovesciata (forma UR) — giovanili / patrocinate', () =
       .map((m) => parseInt(m.match(/>(\d+)/)[1], 10));
   };
 
-  it('descrittore: forma e reversed corretti per ogni formato', () => {
+  it('descrittore: early/late con forma e verso corretti per ogni formato', () => {
     const round = (g, i) => COMPETITION_FORMATS[g].rounds[i];
-    expect(round('Gara Giovanile', 0).forma).toBe('UR');
+    // Blocco UR puro: entrambe le sezioni forma 'UR', verso 'sn-dx'.
+    expect(round('Gara Giovanile', 0).early).toEqual({ forma: 'UR', verso: 'sn-dx' });
+    expect(round('Gara Giovanile', 0).late).toEqual({ forma: 'UR', verso: 'sn-dx' });
     expect(round('Gara Giovanile', 0).reversed).toBe(false);
-    expect(round('Teodoro Soldati', 0).forma).toBe('UR');
-    expect(round('Gara con patrocinio FIG', 0).forma).toBe('U');
-    expect(round('Gara con patrocinio FIG', 1).forma).toBe('UR');
+    expect(round('Teodoro Soldati', 0).early.forma).toBe('UR');
+    expect(round('Gara con patrocinio FIG', 1).early).toEqual({ forma: 'UR', verso: 'sn-dx' });
     expect(round('Gara con patrocinio FIG', 1).reversed).toBe(true);
     expect(round('Trofeo Giovanile Federale', 1).reversed).toBe(true);
-    // I giri 54/72 di qualificazione restano forma 'U'.
-    expect(round('Gara 54 buche', 0).forma).toBe('U');
-    expect(round('Gara 54 buche', 0).verso).toBe('clockwise');
-    expect(round('Gara 54 buche', 1).verso).toBe('anti-clockwise');
+    // 1° giro = cerchio: Early {UR, dx-sn}, Late {U, dx-sn}.
+    expect(round('Gara con patrocinio FIG', 0).early).toEqual({ forma: 'UR', verso: 'dx-sn' });
+    expect(round('Gara con patrocinio FIG', 0).late).toEqual({ forma: 'U', verso: 'dx-sn' });
+    expect(round('Gara 54 buche', 0).early).toEqual({ forma: 'UR', verso: 'dx-sn' });
+    // 2° giro = clessidra: Early {U, sn-dx}, Late {UR, sn-dx}.
+    expect(round('Gara 54 buche', 1).early).toEqual({ forma: 'U', verso: 'sn-dx' });
+    expect(round('Gara 54 buche', 1).late).toEqual({ forma: 'UR', verso: 'sn-dx' });
   });
 
   it('Gara Giovanile: 3 blocchi ∩ — uomini Early, donne, uomini Late', () => {

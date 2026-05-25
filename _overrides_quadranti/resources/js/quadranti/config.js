@@ -77,13 +77,24 @@ export const ROUND_TYPES = {
  *   - type      'qualifying' = campo pieno ; 'finale' = campo ridotto post-taglio
  *   - gender    'both' = uomini + donne ; 'men' = solo uomini
  *   - tee       varianti tee ammesse: 'double' e/o 'single'
- *   - forma     forma dei quadranti:
- *                 'U'  = U dritta      (cerchio / clessidra dei giri 54/72)
- *                 'UR' = U rovesciata ∩ (giovanili, patrocinate 2° giro, finale)
- *   - verso     senso di percorrenza dei quadranti:
- *                 'clockwise'      = sinistra → destra
- *                 'anti-clockwise' = destra → sinistra
+ *   - early     quadranti della sezione Early: { forma, verso }
+ *   - late      quadranti della sezione Late:  { forma, verso }
+ *               forma : 'U' (∪) oppure 'UR' (∩) — la curvatura dell'arco.
+ *               verso : 'sn-dx' oppure 'dx-sn' — la direzione di lettura,
+ *                       cioè se la sequenza dei numeri cresce verso destra
+ *                       o verso sinistra.
+ *               forma e verso sono INDIPENDENTI: una UR può essere sn-dx o
+ *               dx-sn, e così una U. (NON si usa "clockwise": il senso orario
+ *               si legge sn→dx su una ∩ ma dx→sn su una ∪ — ambiguo.) Esempi:
+ *                 cerchio   (1° giro) = early {UR,dx-sn} · late {U, dx-sn}
+ *                 clessidra (2° giro) = early {U, sn-dx} · late {UR,sn-dx}
+ *                 blocco UR (giovanili/patrocinate 2°/finale) = entrambe {UR,sn-dx}
  *   - reversed  true = terzetto interno invertito (3·2·1 invece di 1·2·3)
+ *
+ * Il motore manda al ramo "∩" i giri con entrambe le sezioni di forma 'UR';
+ * gli altri (sezioni miste = cerchio/clessidra) vanno al flusso di
+ * qualificazione storico. Il `verso` orienta l'arco ∩ (quale tee prende la
+ * metà bassa dei ranghi).
  *
  * CAMPI DI OGNI FORMATO:
  *   - label     nome esteso mostrato all'utente
@@ -100,15 +111,15 @@ export const ROUND_TYPES = {
  * ════════════════════════════════════════════════════════════════════════
  */
 export const COMPETITION_FORMATS = {
-  // 54 / 72 buche: 1° giro U clockwise (cerchio), 2° giro U anti-clockwise
-  // (clessidra). Algoritmo dei quadranti storico, invariato.
+  // 54 / 72 buche: 1° giro = cerchio (Early ∩ + Late ∪), 2° giro = clessidra
+  // (Early ∪ + Late ∩, la rotazione del cerchio). Algoritmo storico invariato.
   'Gara 54 buche': {
     label: 'Gara 54 buche (54/54)',
     cutAfter: 2,
     rounds: [
-      { id: 'prima',   label: '1° giro',          type: 'qualifying', gender: 'both', tee: ['double', 'single'], forma: 'U',  verso: 'clockwise',      reversed: false },
-      { id: 'seconda', label: '2° giro',          type: 'qualifying', gender: 'both', tee: ['double', 'single'], forma: 'U',  verso: 'anti-clockwise', reversed: false },
-      { id: 'finale',  label: '3° giro (finale)', type: 'finale',     gender: 'both', tee: ['double', 'single'], forma: 'UR', verso: 'clockwise',      reversed: true }
+      { id: 'prima',   label: '1° giro',          type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'UR', verso: 'dx-sn' }, late: { forma: 'U',  verso: 'dx-sn' }, reversed: false },
+      { id: 'seconda', label: '2° giro',          type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'U',  verso: 'sn-dx' }, late: { forma: 'UR', verso: 'sn-dx' }, reversed: false },
+      { id: 'finale',  label: '3° giro (finale)', type: 'finale',     gender: 'both', tee: ['double', 'single'], early: { forma: 'UR', verso: 'sn-dx' }, late: { forma: 'UR', verso: 'sn-dx' }, reversed: true }
     ]
   },
 
@@ -116,21 +127,21 @@ export const COMPETITION_FORMATS = {
     label: 'Gara 72 buche (uomini 72 / donne 54)',
     cutAfter: 2,
     rounds: [
-      { id: 'prima',   label: '1° giro',                  type: 'qualifying', gender: 'both', tee: ['double', 'single'], forma: 'U',  verso: 'clockwise',      reversed: false },
-      { id: 'seconda', label: '2° giro',                  type: 'qualifying', gender: 'both', tee: ['double', 'single'], forma: 'U',  verso: 'anti-clockwise', reversed: false },
-      { id: 'terzo',   label: '3° giro (finale)',         type: 'finale',     gender: 'both', tee: ['double', 'single'], forma: 'UR', verso: 'clockwise',      reversed: true },
-      { id: 'quarto',  label: '4° giro (finale, uomini)', type: 'finale',     gender: 'men',  tee: ['double', 'single'], forma: 'UR', verso: 'clockwise',      reversed: true }
+      { id: 'prima',   label: '1° giro',                  type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'UR', verso: 'dx-sn' }, late: { forma: 'U',  verso: 'dx-sn' }, reversed: false },
+      { id: 'seconda', label: '2° giro',                  type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'U',  verso: 'sn-dx' }, late: { forma: 'UR', verso: 'sn-dx' }, reversed: false },
+      { id: 'terzo',   label: '3° giro (finale)',         type: 'finale',     gender: 'both', tee: ['double', 'single'], early: { forma: 'UR', verso: 'sn-dx' }, late: { forma: 'UR', verso: 'sn-dx' }, reversed: true },
+      { id: 'quarto',  label: '4° giro (finale, uomini)', type: 'finale',     gender: 'men',  tee: ['double', 'single'], early: { forma: 'UR', verso: 'sn-dx' }, late: { forma: 'UR', verso: 'sn-dx' }, reversed: true }
     ]
   },
 
   // Gare con patrocinio FIG (sostituiscono la Gara 36 buche):
-  // 1° giro U clockwise; 2° giro "per classifica" UR clockwise reversed.
+  // 1° giro = cerchio; 2° giro "per classifica" = blocchi tutti ∩, reversed.
   'Gara con patrocinio FIG': {
     label: 'Gara con patrocinio FIG (2 giri)',
     cutAfter: null,
     rounds: [
-      { id: 'prima',   label: '1° giro',                  type: 'qualifying', gender: 'both', tee: ['double', 'single'], forma: 'U',  verso: 'clockwise', reversed: false },
-      { id: 'seconda', label: '2° giro (per classifica)', type: 'qualifying', gender: 'both', tee: ['double', 'single'], forma: 'UR', verso: 'clockwise', reversed: true }
+      { id: 'prima',   label: '1° giro',                  type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'UR', verso: 'dx-sn' }, late: { forma: 'U',  verso: 'dx-sn' }, reversed: false },
+      { id: 'seconda', label: '2° giro (per classifica)', type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'UR', verso: 'sn-dx' }, late: { forma: 'UR', verso: 'sn-dx' }, reversed: true }
     ]
   },
 
@@ -139,17 +150,17 @@ export const COMPETITION_FORMATS = {
     label: 'Trofeo Giovanile Federale (2 giri)',
     cutAfter: null,
     rounds: [
-      { id: 'prima',   label: '1° giro',                  type: 'qualifying', gender: 'both', tee: ['double', 'single'], forma: 'U',  verso: 'clockwise', reversed: false },
-      { id: 'seconda', label: '2° giro (per classifica)', type: 'qualifying', gender: 'both', tee: ['double', 'single'], forma: 'UR', verso: 'clockwise', reversed: true }
+      { id: 'prima',   label: '1° giro',                  type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'UR', verso: 'dx-sn' }, late: { forma: 'U',  verso: 'dx-sn' }, reversed: false },
+      { id: 'seconda', label: '2° giro (per classifica)', type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'UR', verso: 'sn-dx' }, late: { forma: 'UR', verso: 'sn-dx' }, reversed: true }
     ]
   },
 
-  // Gara Giovanile: giro unico, quadranti a U rovesciata, doppio tee.
+  // Gara Giovanile: giro unico, quadranti tutti a U rovesciata, doppio tee.
   'Gara Giovanile': {
     label: 'Gara Giovanile (giro unico)',
     cutAfter: null,
     rounds: [
-      { id: 'prima', label: 'Giro unico', type: 'qualifying', gender: 'both', tee: ['double'], forma: 'UR', verso: 'clockwise', reversed: false }
+      { id: 'prima', label: 'Giro unico', type: 'qualifying', gender: 'both', tee: ['double'], early: { forma: 'UR', verso: 'sn-dx' }, late: { forma: 'UR', verso: 'sn-dx' }, reversed: false }
     ]
   },
 
@@ -158,7 +169,7 @@ export const COMPETITION_FORMATS = {
     label: 'Teodoro Soldati (giro unico)',
     cutAfter: null,
     rounds: [
-      { id: 'prima', label: 'Giro unico', type: 'qualifying', gender: 'both', tee: ['double'], forma: 'UR', verso: 'clockwise', reversed: false }
+      { id: 'prima', label: 'Giro unico', type: 'qualifying', gender: 'both', tee: ['double'], early: { forma: 'UR', verso: 'sn-dx' }, late: { forma: 'UR', verso: 'sn-dx' }, reversed: false }
     ]
   }
 };

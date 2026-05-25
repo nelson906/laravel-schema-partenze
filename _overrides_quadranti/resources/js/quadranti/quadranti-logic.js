@@ -479,10 +479,14 @@ export class QuadrantiLogic {
       ? roundDesc.type === 'finale'
       : (round === ROUND_TYPES.FINAL && garaNT === COMPETITION_TYPES.GARA_54);
     const isMenOnlyRound = roundDesc ? roundDesc.gender === 'men' : false;
-    // Forma dei quadranti del giro (vedi COMPETITION_FORMATS): 'U' = giri di
-    // qualificazione 54/72 (flusso storico, nessun ramo dedicato); 'UR' = U
-    // rovesciata, layout ∩ dei formati giovanili/patrocinate (ramo qui sotto).
-    const forma = roundDesc ? roundDesc.forma : null;
+    // Forma dei quadranti per sezione (vedi COMPETITION_FORMATS): un giro con
+    // ENTRAMBE le sezioni di forma 'UR' è un blocco a U rovesciata ∩ (giovanili
+    // / patrocinate 2° giro) → ramo dedicato qui sotto. I giri con sezioni di
+    // forma mista (cerchio/clessidra) vanno al flusso di qualificazione storico.
+    const isBloccoUR = !!(
+      roundDesc && roundDesc.early && roundDesc.late
+      && roundDesc.early.forma === 'UR' && roundDesc.late.forma === 'UR'
+    );
 
     // Reset buffer Vista FIG: buildGroupTableRows lo riempie durante il render.
     this._figFlightsBuffer = [];
@@ -640,9 +644,9 @@ export class QuadrantiLogic {
     //     MEZZO — uomini metà alta, donne metà alta, donne metà bassa, uomini
     //     metà bassa. Lo split metà alta/bassa è bilanciaQuadranti
     //     (Q1+Q2 = ranghi bassi, Q3+Q4 = ranghi alti).
-    // Sempre numerico (ordine di merito/classifica). I giri 'finale' (forma
-    // 'UR' anch'essi) sono già intercettati sopra da isFinaleRound.
-    if (forma === 'UR') {
+    // Sempre numerico (ordine di merito/classifica). I giri 'finale' (anch'essi
+    // a sezioni UR) sono già intercettati sopra da isFinaleRound.
+    if (isBloccoUR) {
       const reversedTriplet = roundDesc ? !!roundDesc.reversed : false;
       const colors = TABLE_COLORS.teeColors;
       const gap = this.config.gap;
@@ -653,23 +657,29 @@ export class QuadrantiLogic {
         for (let i = 0; i < a.length; i += mod) out.push(a.slice(i, i + mod));
         return out;
       };
-      // arcoU: costruisce un blocco ∩. Metà bassa dell'intervallo → Tee 1
-      // (terzetti in righe decrescenti); metà alta → Tee 10 (righe crescenti).
+      // arcoU: costruisce un blocco ∩. L'intervallo è spezzato a metà; il
+      // `verso` decide su quale tee va la metà bassa:
+      //   'sn-dx' → metà bassa su Tee 1 (righe decrescenti), metà alta su Tee 10;
+      //   'dx-sn' → speculare (metà bassa su Tee 10).
       // La numerazione flight NON si fa qui: la assegna assegnaFlightUnificato
       // su TUTTI i blocchi insieme (regola unica: Tee 1 continuo, poi Tee 10).
-      const arcoU = (arr) => {
+      const arcoU = (arr, verso) => {
         const totFlights = Math.ceil(arr.length / mod);
         const cut = Math.floor(totFlights / 2) * mod;
-        const tee1Tri = chunk(arr.slice(0, cut)).reverse(); // righe decrescenti
-        const tee10Tri = chunk(arr.slice(cut));             // righe crescenti
+        const bassaTri = chunk(arr.slice(0, cut)).reverse(); // metà bassa, righe decr.
+        const altaTri  = chunk(arr.slice(cut));              // metà alta, righe cresc.
         const mk = (t) => ({ players: reversedTriplet ? t.slice().reverse() : t.slice() });
-        return { tee1: tee1Tri.map(mk), tee10: tee10Tri.map(mk) };
+        return verso === 'dx-sn'
+          ? { tee1: altaTri.map(mk),  tee10: bassaTri.map(mk) }
+          : { tee1: bassaTri.map(mk), tee10: altaTri.map(mk) };
       };
 
       // Definizione dei blocchi (sempre numerici: ordine di merito/classifica).
       const menRanks = range(1, players);
       const womenRanks = range(1, proette);
       const blocchi = [];
+      // verso (direzione di lettura) di una sezione, dal descrittore del giro.
+      const versoOf = (sess) => roundDesc[sess].verso;
       if (reversedTriplet) {
         // Patrocinate/Trofei 2° giro: 4 blocchi a ∩ reversed, donne IN MEZZO.
         // Lo split metà alta / metà bassa segue bilanciaQuadranti: i ranghi
@@ -681,10 +691,10 @@ export class QuadrantiLogic {
         const menLower = menRanks.slice(0, menLimit);
         const womenUpper = womenRanks.slice(womenLimit);
         const womenLower = womenRanks.slice(0, womenLimit);
-        if (menUpper.length > 0)   blocchi.push({ cat: 'M', arr: menUpper,   session: 'early' });
-        if (womenUpper.length > 0) blocchi.push({ cat: 'F', arr: womenUpper, session: 'early' });
-        if (womenLower.length > 0) blocchi.push({ cat: 'F', arr: womenLower, session: 'late' });
-        if (menLower.length > 0)   blocchi.push({ cat: 'M', arr: menLower,   session: 'late' });
+        if (menUpper.length > 0)   blocchi.push({ cat: 'M', arr: menUpper,   session: 'early', verso: versoOf('early') });
+        if (womenUpper.length > 0) blocchi.push({ cat: 'F', arr: womenUpper, session: 'early', verso: versoOf('early') });
+        if (womenLower.length > 0) blocchi.push({ cat: 'F', arr: womenLower, session: 'late',  verso: versoOf('late') });
+        if (menLower.length > 0)   blocchi.push({ cat: 'M', arr: menLower,   session: 'late',  verso: versoOf('late') });
       } else {
         // Gara Giovanile / Teodoro Soldati: 3 blocchi ∩ in sequenza —
         // uomini metà alta (Early), donne, uomini metà bassa (Late).
@@ -700,15 +710,15 @@ export class QuadrantiLogic {
         const earlyCount = Math.min(earlyMenFlights * mod, menRanks.length);
         const menEarly = menRanks.slice(menRanks.length - earlyCount); // ranghi alti
         const menLate = menRanks.slice(0, menRanks.length - earlyCount); // ranghi bassi
-        if (menEarly.length > 0) blocchi.push({ cat: 'M', arr: menEarly,   session: 'early' });
-        if (proette > 0)         blocchi.push({ cat: 'F', arr: womenRanks, session: 'late' });
-        if (menLate.length > 0)  blocchi.push({ cat: 'M', arr: menLate,    session: 'late' });
+        if (menEarly.length > 0) blocchi.push({ cat: 'M', arr: menEarly,   session: 'early', verso: versoOf('early') });
+        if (proette > 0)         blocchi.push({ cat: 'F', arr: womenRanks, session: 'late',  verso: versoOf('late') });
+        if (menLate.length > 0)  blocchi.push({ cat: 'M', arr: menLate,    session: 'late',  verso: versoOf('late') });
       }
 
       // Costruisce i gruppi Tee 1 / Tee 10 di ogni blocco, POI numera i flight
       // con la regola unificata (Tee 1 continuo Early→Late, poi Tee 10), uguale
       // per ogni gara: la numerazione non dipende più dal singolo formato.
-      const costruiti = blocchi.map((b) => ({ ...b, ...arcoU(b.arr) }));
+      const costruiti = blocchi.map((b) => ({ ...b, ...arcoU(b.arr, b.verso) }));
       this.assegnaFlightUnificato(costruiti);
 
       this.figQuadranti = [];
