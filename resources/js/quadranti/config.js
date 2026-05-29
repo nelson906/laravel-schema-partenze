@@ -116,6 +116,7 @@ export const COMPETITION_FORMATS = {
   'Gara 54 buche': {
     label: 'Gara 54 buche (54/54)',
     cutAfter: 2,
+    defaults: { players: 144, proette: 48 },
     rounds: [
       { id: 'prima',   label: '1° giro',          type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'UR', verso: 'dx-sn' }, late: { forma: 'U',  verso: 'dx-sn' }, reversed: false },
       { id: 'seconda', label: '2° giro',          type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'U',  verso: 'sn-dx' }, late: { forma: 'UR', verso: 'sn-dx' }, reversed: false },
@@ -155,21 +156,25 @@ export const COMPETITION_FORMATS = {
     ]
   },
 
-  // Gara Giovanile: giro unico, quadranti tutti a U rovesciata, doppio tee.
+  // Gara Giovanile: giro unico, quadranti tutti a U rovesciata.
+  // Tee unico abilitato: nessun PDF dedicato → segue la logica del 54 buche
+  // 'prima' (qualifying), cioè femaleGroups + maleGroups generati da
+  // generatePlayerGroups (quadranti Q1-Q4 su singolo tee).
   'Gara Giovanile': {
     label: 'Gara Giovanile (giro unico)',
     cutAfter: null,
     rounds: [
-      { id: 'prima', label: 'Giro unico', type: 'qualifying', gender: 'both', tee: ['double'], early: { forma: 'UR', verso: 'sn-dx' }, late: { forma: 'UR', verso: 'sn-dx' }, reversed: false }
+      { id: 'prima', label: 'Giro unico', type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'UR', verso: 'sn-dx' }, late: { forma: 'UR', verso: 'sn-dx' }, reversed: false }
     ]
   },
 
-  // Teodoro Soldati: stesso schema della Gara Giovanile.
+  // Teodoro Soldati: stesso schema della Gara Giovanile (incluso tee unico
+  // che segue la logica del 54 buche 'prima').
   'Teodoro Soldati': {
     label: 'Teodoro Soldati (giro unico)',
     cutAfter: null,
     rounds: [
-      { id: 'prima', label: 'Giro unico', type: 'qualifying', gender: 'both', tee: ['double'], early: { forma: 'UR', verso: 'sn-dx' }, late: { forma: 'UR', verso: 'sn-dx' }, reversed: false }
+      { id: 'prima', label: 'Giro unico', type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'UR', verso: 'sn-dx' }, late: { forma: 'UR', verso: 'sn-dx' }, reversed: false }
     ]
   }
 };

@@ -1835,18 +1835,23 @@ export class QuadrantiLogic {
      * Per il giro finale (54 buche: 3° giro; 72 buche: 3°/4° giro): tee unico,
      * ordine di classifica, sempre numerico (i nomi non sono utili in una
      * classifica). Tre blocchi sequenziali con stacco extra tra l'uno e
-     * l'altro, nell'ordine di partenza confermato (schema FIG):
+     * l'altro. REGOLA UNIFORME: ogni blocco parte dal rank più ALTO (= peggior
+     * classificato del blocco) e finisce col rank più BASSO (= miglior
+     * classificato del blocco). Il leader del giro (rank 1 dell'ultimo blocco
+     * presente) chiude sempre l'intero giro.
      *   Blocco 1 = Uomini back-half (rank halfM+1..N), gruppi in ordine
-     *              CRESCENTE di rank (worst overall a fine blocco);
+     *              DECRESCENTE di rank: il rank più alto N apre il blocco,
+     *              il rank halfM+1 chiude il blocco;
      *   Blocco 2 = Uomini front-half (rank 1..halfM), gruppi in ordine
-     *              DECRESCENTE di rank (leader uomini a fine blocco);
+     *              DECRESCENTE di rank (leader uomini rank 1 a fine blocco);
      *   Blocco 3 = Donne (tutte), gruppi in ordine DECRESCENTE di rank
-     *              (leader donne a chiusura del giro). Assente nei giri
-     *              'men-only' (4° giro della Gara 72 buche).
+     *              (leader donne rank 1 a chiusura del giro). Assente nei
+     *              giri 'men-only' (4° giro della Gara 72 buche).
+     * Combinando Blocco 1 + Blocco 2 il campo uomini scorre con continuità
+     * dal peggior classificato (rank N) al leader (rank 1).
      * Display intra-gruppo: rank alto a sinistra, rank basso a destra
      * (es. gruppo 28-30 → "30 29 28"). Riusa la stessa "logica dei quadranti"
-     * dei giri normali (un quadrante ascendente Q1-like + uno discendente
-     * Q2-like) ma applicata a un singolo tee.
+     * dei giri normali ma applicata a un singolo tee.
      *
      * @param {string} round - 'prima', 'seconda' o 'finale'
      * @returns {string} HTML table content
@@ -1906,17 +1911,12 @@ export class QuadrantiLogic {
             const backMen = ranksM.slice(frontCountM);   // rank frontCountM+1..N (back)
             const frontMen = ranksM.slice(0, frontCountM); // rank 1..frontCountM (front)
 
-            // Helper inline (non sono "nuove funzioni" del modulo: sono
-            // closure locali a generateSingleTee).
-            const asc = (arr, cat) => {
-                const groups = [];
-                for (let i = 0; i < arr.length; i += mod) {
-                    const slice = arr.slice(i, Math.min(i + mod, arr.length));
-                    // Display intra-gruppo: rank più alto a sinistra
-                    groups.push({ players: slice.slice().reverse(), category: cat });
-                }
-                return groups;
-            };
+            // Helper inline (non è una "nuova funzione" del modulo: è una
+            // closure locale a generateSingleTee). Produce gruppi in ordine
+            // decrescente di rank a partire dalla fine dell'array: il primo
+            // gruppo contiene i rank più alti, l'ultimo i più bassi. Display
+            // intra-gruppo: rank alto a sinistra (es. ranks [25,26,27] →
+            // gruppo [27,26,25]).
             const desc = (arr, cat) => {
                 const groups = [];
                 for (let i = arr.length - 1; i >= 0; i -= mod) {
@@ -1930,10 +1930,13 @@ export class QuadrantiLogic {
                 return groups;
             };
 
-            // Ordine di partenza confermato (schema FIG, tee unico):
-            //   uomini back-half → uomini front-half → donne.
-            const blockMenBack  = asc(backMen, 'M');    // 28-54: back-half crescente
-            const blockMenFront = desc(frontMen, 'M');  // 1-27: front-half decrescente
+            // Ordine di partenza (tee unico): uomini back-half → uomini
+            // front-half → donne. TUTTI i blocchi vanno dal rank più ALTO al
+            // più BASSO (decrescente): il peggior classificato apre il
+            // blocco, il miglior classificato lo chiude. Combinando i due
+            // blocchi maschili il campo uomini scorre da rank N a rank 1.
+            const blockMenBack  = desc(backMen, 'M');   // halfM+1..N: back-half decrescente
+            const blockMenFront = desc(frontMen, 'M');  // 1..halfM: front-half decrescente
             const blockWomen    = ranksF.length > 0     // donne decrescente (chiudono)
                 ? desc(ranksF, 'F')
                 : [];
@@ -1966,9 +1969,93 @@ export class QuadrantiLogic {
                 this.pushFigQuadrante('Donne', q, femaleGroups.filter(g => g.quadrant === q));
             });
 
-            allGroups = round === ROUND_TYPES.FIRST
-                ? [...femaleGroups, ...maleGroups]
-                : [...maleGroups.reverse(), ...femaleGroups.reverse()];
+            // TEE UNICO — layout FIG ("Schema TEE UNICO" del PDF ufficiale).
+            //
+            // Ogni quadrante è INTERNAMENTE DECRESCENTE (rank alto → rank basso
+            // dentro al blocco). generatePlayerGroups, scritto per il doppio
+            // tee, produce Q1 e Q4 crescenti: in tee unico vanno invertiti.
+            //
+            // Due schemi distinti a seconda del formato:
+            //
+            // A) Gara 54 buche, Gara 72 buche, Gara con patrocinio FIG, Trofeo
+            //    Giovanile Federale → "schema Q2-Q1 / Q4-Q3" (uomini Early in
+            //    apertura, Late in chiusura, donne in mezzo):
+            //      1° giorno: M-Q2 → M-Q1 → F-Q2 → F-Q1 → F-Q4 → F-Q3 → M-Q4 → M-Q3
+            //      2° giorno: rotazione Q1↔Q4 e Q2↔Q3 del 1° giorno.
+            //
+            // B) Gara Giovanile, Teodoro Soldati → "schema Q4-Q3-…-Q2-Q1"
+            //    (uomini Late in apertura, Early in chiusura, donne in mezzo
+            //    con tutti i loro 4 quadranti):
+            //      Giro unico: M-Q4 → M-Q3 → F-Q4 → F-Q3 → F-Q2 → F-Q1 → M-Q2 → M-Q1
+            //    (questi formati hanno solo "Giro unico", quindi nessuna rotazione.)
+            // FIX FONDAMENTALE: le label Q1/Q2/Q3/Q4 nel codice usano la
+            // convenzione bilanciaQuadranti del DOPPIO tee:
+            //   bQ.Q2 = rank più BASSO   (1..limit1)
+            //   bQ.Q1 = lower-middle      (limit1+1..limit2)
+            //   bQ.Q4 = upper-middle      (limit2+1..limit3)
+            //   bQ.Q3 = rank più ALTO    (limit3+1..N)
+            // Lo SCHEMA PDF "TEE UNICO" usa label posizionali per rank:
+            //   PDF.Q1 = rank più basso → corrisponde a bQ.Q2
+            //   PDF.Q2 = lower-middle   → corrisponde a bQ.Q1
+            //   PDF.Q3 = upper-middle   → corrisponde a bQ.Q4
+            //   PDF.Q4 = rank più alto  → corrisponde a bQ.Q3
+            // Rinominiamo a P1..P4 (Position by rank) per non confonderci più.
+            const positionalByRank = (groups) => {
+                const byQ = { Q1: [], Q2: [], Q3: [], Q4: [] };
+                groups.forEach((g) => byQ[g.quadrant].push(g));
+                return {
+                    P1: byQ.Q2.slice(),               // rank più basso, desc nativo
+                    P2: byQ.Q1.slice().reverse(),     // lower-middle (era asc → desc)
+                    P3: byQ.Q4.slice().reverse(),     // upper-middle (era asc → desc)
+                    P4: byQ.Q3.slice(),               // rank più alto, desc nativo
+                };
+            };
+            const M = positionalByRank(maleGroups);
+            const F = positionalByRank(femaleGroups);
+
+            // SCHEMA PDF "TEE UNICO" (notazione user: P1=basso, P4=alto):
+            //
+            // A) Gara 54 buche, Gara 72 buche, Gara con patrocinio FIG, Trofeo
+            //    Giovanile Federale:
+            //      1° giorno: M-P2 → M-P1 → F-P2 → F-P1 → F-P4 → F-P3 → M-P4 → M-P3
+            //      2° giorno: rotazione P1↔P4, P2↔P3 del 1° giorno.
+            //
+            // B) Gara Giovanile, Teodoro Soldati (giro unico, no rotazione):
+            //      M-P4 → M-P3 → F-P4 → F-P3 → F-P2 → F-P1 → M-P2 → M-P1
+            //
+            // Risultato per Giovanile 90M+48F: rank monotonico 90→46 in apertura,
+            // donne 48→1 in mezzo, rank monotonico 45→1 in chiusura (nessun
+            // "salto" Q3↔Q4 come nello schema vecchio).
+            const isSchemaB = (
+                garaNT === COMPETITION_TYPES.GARA_GIOVANILE ||
+                garaNT === COMPETITION_TYPES.TEODORO_SOLDATI
+            );
+
+            if (isSchemaB) {
+                allGroups = [
+                    ...M.P4, ...M.P3,
+                    ...F.P4, ...F.P3, ...F.P2, ...F.P1,
+                    ...M.P2, ...M.P1,
+                ];
+            } else {
+                allGroups = round === ROUND_TYPES.FIRST
+                    ? [
+                        // 1° giro: leaders al centro (M-P1, F in mezzo,
+                        // M-P3 in fondo); ogni blocco monotonico decr.
+                        ...M.P2, ...M.P1,
+                        ...F.P2, ...F.P1, ...F.P4, ...F.P3,
+                        ...M.P4, ...M.P3,
+                    ]
+                    : [
+                        // 2° giro: worst-on-top, leaders in fondo. Sequenza
+                        // monotonica decrescente per blocchi: P4→P3 in cima,
+                        // donne tutte decrescenti (P4→P1) in mezzo, P2→P1
+                        // in fondo. Coincide con lo Schema B (Giovanile).
+                        ...M.P4, ...M.P3,
+                        ...F.P4, ...F.P3, ...F.P2, ...F.P1,
+                        ...M.P2, ...M.P1,
+                    ];
+            }
         }
 
         // Build single tee table

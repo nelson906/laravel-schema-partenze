@@ -12,4 +12,10 @@ export default defineConfig({
             refresh: true,
         }),
     ],
+    // Source maps abilitate per il debug step-by-step in DevTools.
+    // Permettono di vedere i file sorgente originali (quadranti-logic.js,
+    // quadranti.js, ecc.) in Sources tab → Cmd+P → cerca per nome.
+    build: {
+        sourcemap: true,
+    },
 });
