@@ -116,6 +116,7 @@ export const COMPETITION_FORMATS = {
   'Gara 54 buche': {
     label: 'Gara 54 buche (54/54)',
     cutAfter: 2,
+    defaults: { players: 144, proette: 48 },
     rounds: [
       { id: 'prima',   label: '1° giro',          type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'UR', verso: 'dx-sn' }, late: { forma: 'U',  verso: 'dx-sn' }, reversed: false },
       { id: 'seconda', label: '2° giro',          type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'U',  verso: 'sn-dx' }, late: { forma: 'UR', verso: 'sn-dx' }, reversed: false },
@@ -126,6 +127,7 @@ export const COMPETITION_FORMATS = {
   'Gara 72 buche': {
     label: 'Gara 72 buche (uomini 72 / donne 54)',
     cutAfter: 2,
+    defaults: { players: 144, proette: 48 },
     rounds: [
       { id: 'prima',   label: '1° giro',                  type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'UR', verso: 'dx-sn' }, late: { forma: 'U',  verso: 'dx-sn' }, reversed: false },
       { id: 'seconda', label: '2° giro',                  type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'U',  verso: 'sn-dx' }, late: { forma: 'UR', verso: 'sn-dx' }, reversed: false },
@@ -139,6 +141,7 @@ export const COMPETITION_FORMATS = {
   'Gara con patrocinio FIG': {
     label: 'Gara con patrocinio FIG (2 giri)',
     cutAfter: null,
+    defaults: { players: 90, proette: 42 },
     rounds: [
       { id: 'prima',   label: '1° giro',                  type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'UR', verso: 'dx-sn' }, late: { forma: 'U',  verso: 'dx-sn' }, reversed: false },
       { id: 'seconda', label: '2° giro (per classifica)', type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'UR', verso: 'sn-dx' }, late: { forma: 'UR', verso: 'sn-dx' }, reversed: true }
@@ -149,6 +152,7 @@ export const COMPETITION_FORMATS = {
   'Trofeo Giovanile Federale': {
     label: 'Trofeo Giovanile Federale (2 giri)',
     cutAfter: null,
+    defaults: { players: 90, proette: 42 },
     rounds: [
       { id: 'prima',   label: '1° giro',                  type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'UR', verso: 'dx-sn' }, late: { forma: 'U',  verso: 'dx-sn' }, reversed: false },
       { id: 'seconda', label: '2° giro (per classifica)', type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'UR', verso: 'sn-dx' }, late: { forma: 'UR', verso: 'sn-dx' }, reversed: true }
@@ -162,6 +166,7 @@ export const COMPETITION_FORMATS = {
   'Gara Giovanile': {
     label: 'Gara Giovanile (giro unico)',
     cutAfter: null,
+    defaults: { players: 90, proette: 42 },
     rounds: [
       { id: 'prima', label: 'Giro unico', type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'UR', verso: 'sn-dx' }, late: { forma: 'UR', verso: 'sn-dx' }, reversed: false }
     ]
@@ -172,6 +177,7 @@ export const COMPETITION_FORMATS = {
   'Teodoro Soldati': {
     label: 'Teodoro Soldati (giro unico)',
     cutAfter: null,
+    defaults: { players: 90, proette: 42 },
     rounds: [
       { id: 'prima', label: 'Giro unico', type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'UR', verso: 'sn-dx' }, late: { forma: 'UR', verso: 'sn-dx' }, reversed: false }
     ]

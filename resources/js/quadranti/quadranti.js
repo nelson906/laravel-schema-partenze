@@ -263,7 +263,19 @@ class QuadrantiApp {
     // Handler sincrono: aggiorna #giornata PRIMA che handleFormChange (debounced)
     // legga la giornata selezionata.
     $('#gara_NT').on('change', () => {
-      this.config.garaNT = $('#gara_NT').val();
+      const newGara = $('#gara_NT').val();
+      this.config.garaNT = newGara;
+      // Applica i valori di default players/proette del formato selezionato
+      // (es. 54/72 buche → 144/48; Giovanili/Patrocinato/Trofeo → 90/42).
+      // Definiti in COMPETITION_FORMATS[newGara].defaults (config.js).
+      const fmt = COMPETITION_FORMATS[newGara];
+      if (fmt && fmt.defaults) {
+        $('#players').val(fmt.defaults.players);
+        $('#proette').val(fmt.defaults.proette);
+        // Trigger 'change' propaga i valori a handleFormChange → storage +
+        // rigenerazione tabella.
+        $('#players, #proette').trigger('change');
+      }
       this.refreshGiornataOptions();
     });
 

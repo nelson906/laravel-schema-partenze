@@ -1861,14 +1861,6 @@ export class QuadrantiLogic {
         const players = parseInt(this.config.players);
         const proette = parseInt(this.config.proette);
         const garaNT = this.config.garaNT;
-        // DEBUG TEMP — verifica che la funzione sia effettivamente chiamata.
-        // Apri DevTools console (F12) → vedi questo log a ogni rigenerazione.
-        // Rimuovi questo log dopo aver finito il debug.
-        console.log('[QuadrantiLogic] generateSingleTee CHIAMATA', {
-            round, garaNT, players, proette,
-            doppiePartenze: this.config.doppiePartenze,
-            timestamp: new Date().toISOString(),
-        });
 
         // Dispatch data-driven: il descrittore COMPETITION_FORMATS dice se il
         // giro è di tipo 'finale' e se è riservato ai soli uomini. Fallback al

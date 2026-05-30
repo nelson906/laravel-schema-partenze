@@ -17,5 +17,9 @@ export default defineConfig({
     // quadranti.js, ecc.) in Sources tab → Cmd+P → cerca per nome.
     build: {
         sourcemap: true,
+        // Silenzia il warning "chunk > 500 kB": i bundle includono jQuery +
+        // Alpine + Tailwind precompilato e non sono splittabili senza
+        // refactor pesante.
+        chunkSizeWarningLimit: 1024,
     },
 });
