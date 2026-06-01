@@ -11,6 +11,7 @@ on:
     branches: [main, master]
   pull_request:
     branches: [main, master]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -71,3 +72,68 @@ jobs:
 
       - name: Run PHP tests (PHPUnit, sqlite :memory:)
         run: php artisan test
+
+  deploy:
+    name: Deploy FTP Aruba (incrementale)
+    needs: tests
+    # Deploy MANUALE: parte solo da Actions -> Run workflow (workflow_dispatch),
+    # mai in automatico su push. I test girano comunque prima (needs: tests).
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP 8.5
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: mbstring, dom, xml, fileinfo, bcmath, intl, gd, zip, pdo, pdo_mysql
+          coverage: none
+          tools: composer:v2
+
+      - name: Install Composer (produzione, no dev)
+        run: composer install --no-dev --optimize-autoloader --prefer-dist --no-interaction --no-progress
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Build front-end (Vite -> public/build)
+        run: |
+          npm ci
+          npm run build
+
+      - name: Deploy incrementale via FTP
+        # SamKirkland/FTP-Deploy-Action carica SOLO i file cambiati: mantiene
+        # .ftp-deploy-sync-state.json sul server e confronta gli hash.
+        # I path in "exclude" NON vengono ne' caricati ne' cancellati:
+        # storage/ (log, backup, upload) e .env del server restano INTATTI.
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          # Deve finire con "/". Es. "/" oppure "/htdocs/" (vedi layout FTP Aruba).
+          server-dir: ${{ secrets.FTP_SERVER_DIR }}
+          # FTP semplice: l'FTPS di Aruba dava "tlsv1 alert decode error" sul
+          # data socket durante upload lunghi. Deploy manuale + filtro IP aperto
+          # solo nella finestra di deploy limitano l'esposizione. Cifrato: protocol: ftps.
+          protocol: ftp
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/.github/**
+            **/node_modules/**
+            **/tests/**
+            **/storage/**
+            **/.env
+            **/.env.*
+            **/public/storage/**
+            **/*.md
+            **/_audit_archive/**
+            **/.scannerwork/**
+            **/.ftp-deploy-sync-state.json
