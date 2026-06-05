@@ -107,21 +107,23 @@ jobs:
           npm ci
           npm run build
 
-      - name: Deploy incrementale via FTP
-        # SamKirkland/FTP-Deploy-Action carica SOLO i file cambiati: mantiene
-        # .ftp-deploy-sync-state.json sul server e confronta gli hash.
-        # I path in "exclude" NON vengono ne' caricati ne' cancellati:
-        # storage/ (log, backup, upload) e .env del server restano INTATTI.
+      - name: Deploy incrementale via FTP (SamKirkland)
+        # SCELTA: basic-ftp/SamKirkland funziona col canale dati PASV di Aruba
+        # (il debug ha mostrato login OK ma lftp falliva SEMPRE sul data channel).
+        # E' incrementale per natura: tiene .ftp-deploy-sync-state.json sul server
+        # e confronta gli hash, quindi dopo il primo sync carica solo i file cambiati.
+        # I path in "exclude" non vengono ne' caricati ne' cancellati: storage/ e
+        # .env del server restano INTATTI.
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          # Deve finire con "/". Es. "/" oppure "/htdocs/" (vedi layout FTP Aruba).
-          server-dir: ${{ secrets.FTP_SERVER_DIR }}
-          # FTP semplice: l'FTPS di Aruba dava "tlsv1 alert decode error" sul
-          # data socket durante upload lunghi. Deploy manuale + filtro IP aperto
-          # solo nella finestra di deploy limitano l'esposizione. Cifrato: protocol: ftps.
+          # Sottocartella dell'app sul server. L'FTP Aruba atterra nella web root
+          # del dominio (dove stanno lupigrigi/ arbitrigolf/ partenze/ e index.html),
+          # cioe' lo stesso "/" che prima funzionava quando l'app era alla radice.
+          # Hardcoded per evitare il secret sbagliato che dava "550 ... /app".
+          server-dir: /partenze/
           protocol: ftp
           exclude: |
             **/.git*
