@@ -803,9 +803,10 @@ describe('generateSingleTee — giro finale 54 buche', () => {
     expect(firstRow).toContain('>54<');
     expect(firstRow).toContain('>53<');
     expect(firstRow).toContain('>52<');
-    // Non deve esserci nessun rank della front-half (1-27) nella prima riga
+    // Nessun rank della front-half (es. 27) nella prima riga.
+    // Nota: Flight=1 e Tee=1 producono celle ">1<" non-player; usiamo 27
+    // come marker della front-half ad alto rank.
     expect(firstRow).not.toMatch(/>27</);
-    expect(firstRow).not.toMatch(/>1</);
   });
 
   it('blocco 1 ultimo gruppo = (28,29,30) → display "30 29 28"', () => {
@@ -1941,7 +1942,7 @@ describe('Nuovi formati — giovanili, patrocinio FIG, trofei', () => {
     expect(tee).toEqual(expect.arrayContaining(['double', 'single']));
   });
 
-  it('Gara Giovanile tee unico: stessa logica 54 prima (donne prima, poi uomini)', () => {
+  it('Gara Giovanile tee unico: schema B (M-Q4→M-Q3→F→M-Q2→M-Q1, donne in mezzo, tutti decrescenti)', () => {
     const l = makeLogic({
       garaNT: 'Gara Giovanile', players: 30, proette: 12, playersPerFlight: 3,
       doppiePartenze: 'Tee Unico', nominativo: 'Off',
@@ -1954,13 +1955,16 @@ describe('Nuovi formati — giovanili, patrocinio FIG, trofei', () => {
     const trCount = (bodyHtml.match(/<tr>/g) || []).length;
     expect(trCount).toBe(14);
 
-    // Logica 54 'prima' tee unico: allGroups = [...femaleGroups, ...maleGroups]
-    // → le prime righe devono contenere celle rosse (donne), le ultime nere (uomini).
+    // Schema B PDF "TEE UNICO" per Gara Giovanile:
+    //   M-Q4 → M-Q3 → F-Q4 → F-Q3 → F-Q2 → F-Q1 → M-Q2 → M-Q1
+    // → prima E ultima riga = uomini (nere); donne in mezzo.
     const rows = bodyHtml.split('</tr>').slice(0, -1);
-    expect(rows[0]).toContain('color:red');                  // prima riga = donne
-    expect(rows[rows.length - 1]).not.toContain('color:red'); // ultima riga = uomini
+    expect(rows[0]).not.toContain('color:red');               // apertura = uomini Late
+    expect(rows[rows.length - 1]).not.toContain('color:red'); // chiusura = uomini Early
+    const middleHasRed = rows.slice(1, -1).some((r) => r.includes('color:red'));
+    expect(middleHasRed).toBe(true);                          // donne in mezzo
 
-    // Tutti i rank donne 1..12 presenti, tutti i rank uomini 1..30 presenti.
+    // Tutti i rank donne 1..12 presenti.
     const redNums = (bodyHtml.match(/color:red"[^>]*>(\d+)</g) || [])
       .map((m) => parseInt(m.match(/>(\d+)</)[1], 10));
     expect(redNums.sort((a, b) => a - b)).toEqual(
@@ -1968,7 +1972,7 @@ describe('Nuovi formati — giovanili, patrocinio FIG, trofei', () => {
     );
   });
 
-  it('Teodoro Soldati tee unico: stessa logica 54 prima (analoga a Gara Giovanile)', () => {
+  it('Teodoro Soldati tee unico: schema B (analogo a Gara Giovanile, donne in mezzo)', () => {
     const l = makeLogic({
       garaNT: 'Teodoro Soldati', players: 60, proette: 18, playersPerFlight: 3,
       doppiePartenze: 'Tee Unico', nominativo: 'Off',
@@ -1984,10 +1988,12 @@ describe('Nuovi formati — giovanili, patrocinio FIG, trofei', () => {
     // Non è un giro finale: niente 'Blocco' nelle label dei figQuadranti
     expect(l.figQuadranti.some((q) => /Blocco/.test(q.label))).toBe(false);
 
-    // Donne in cima, uomini in fondo (come 54 'prima')
+    // Schema B: uomini in apertura E in chiusura, donne in mezzo.
     const rows = bodyHtml.split('</tr>').slice(0, -1);
-    expect(rows[0]).toContain('color:red');
+    expect(rows[0]).not.toContain('color:red');
     expect(rows[rows.length - 1]).not.toContain('color:red');
+    const middleHasRed = rows.slice(1, -1).some((r) => r.includes('color:red'));
+    expect(middleHasRed).toBe(true);
   });
 
   it('Gara con patrocinio FIG: 1° giro qualificazione, 2° giro per classifica', () => {

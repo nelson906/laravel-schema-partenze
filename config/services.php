@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'federgolf' => [
+        'ajax_url' => env('FEDERGOLF_AJAX_URL', 'https://www.federgolf.it/wp-admin/admin-ajax.php'),
+    ],
+
 ];

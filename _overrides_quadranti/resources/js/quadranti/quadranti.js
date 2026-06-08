@@ -457,6 +457,7 @@ $('#fig-strip').on('click', '#fig-strip-copy', (e) => {
     setTimeout(restore, 5000);
 
     window.print();
+
   }
 
   /**
@@ -647,7 +648,7 @@ $('#fig-strip').on('click', '#fig-strip-copy', (e) => {
     const proette = parseInt(this.config.proette) || 0;
     const totalPlayers = players + proette;
     const mod = parseInt(this.config.playersPerFlight);
-    
+
     if (totalPlayers <= mod * 32) {
       $('.compatto').show();
     } else {

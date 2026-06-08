@@ -682,15 +682,35 @@ export class QuadrantiLogic {
       const versoOf = (sess) => roundDesc[sess].verso;
       if (reversedTriplet) {
         // Patrocinate/Trofei 2° giro: 4 blocchi a ∩ reversed, donne IN MEZZO.
-        // Lo split metà alta / metà bassa segue bilanciaQuadranti: i ranghi
-        // bassi (Q1+Q2, = limit2) e i ranghi alti (Q3+Q4). Ordine di partenza:
+        // Ordine di partenza:
         //   uomini metà alta → donne metà alta → donne metà bassa → uomini metà bassa.
+        //
+        // BILANCIAMENTO Early ≈ Late (fix): gli uomini tengono lo split naturale
+        // (limit2 → metà bassa, più grande, in Late); le DONNE compensano lo
+        // sbilancio invece di replicarlo. Prima entrambi i sessi mettevano la
+        // metà grande in Late → gli scarti si SOMMAVANO (es. 90U+42D: 10 Early /
+        // 12 Late). Ora la metà grande delle donne va in Early e pareggia gli
+        // uomini (→ 11 Early / 11 Late, come il 1° giro: U 7/8, D 4/3).
         const menLimit = players > 0 ? this.limitiQuadranti(players, mod).limit2 : 0;
-        const womenLimit = proette > 0 ? this.limitiQuadranti(proette, mod).limit2 : 0;
-        const menUpper = menRanks.slice(menLimit);
-        const menLower = menRanks.slice(0, menLimit);
-        const womenUpper = womenRanks.slice(womenLimit);
-        const womenLower = womenRanks.slice(0, womenLimit);
+        const menUpper = menRanks.slice(menLimit);   // metà alta uomini → Early
+        const menLower = menRanks.slice(0, menLimit); // metà bassa uomini → Late
+        // Flight per blocco (totale = Early + Late, indipendente dal tee).
+        const menUpperFlights = Math.ceil(menUpper.length / mod);
+        const menLowerFlights = Math.ceil(menLower.length / mod);
+        const womenTotFlights = Math.ceil(proette / mod);
+        // Donne in Early: tanti flight da pareggiare lo scarto degli uomini.
+        //   menUpper + Dearly  ≈  menLower + Dlate ,  Dearly + Dlate = womenTot
+        //   ⇒ Dearly = (menLower − menUpper + womenTot) / 2
+        let womenEarlyFlights = Math.round(
+          (menLowerFlights - menUpperFlights + womenTotFlights) / 2
+        );
+        womenEarlyFlights = Math.max(0, Math.min(womenTotFlights, womenEarlyFlights));
+        const womenLateFlights = womenTotFlights - womenEarlyFlights;
+        // La metà MIGLIORE (ranghi bassi) parte Late, come gli uomini; l'eventuale
+        // flight incompleto resta in Early (metà peggiore), coerente con limit2.
+        const womenLateCount = Math.min(womenLateFlights * mod, proette);
+        const womenUpper = womenRanks.slice(womenLateCount);    // metà alta donne → Early
+        const womenLower = womenRanks.slice(0, womenLateCount); // metà bassa donne → Late
         if (menUpper.length > 0)   blocchi.push({ cat: 'M', arr: menUpper,   session: 'early', verso: versoOf('early') });
         if (womenUpper.length > 0) blocchi.push({ cat: 'F', arr: womenUpper, session: 'early', verso: versoOf('early') });
         if (womenLower.length > 0) blocchi.push({ cat: 'F', arr: womenLower, session: 'late',  verso: versoOf('late') });
@@ -730,7 +750,15 @@ export class QuadrantiLogic {
         const colore = b.cat === 'F' ? TABLE_COLORS.women : TABLE_COLORS.men;
         const lbg = b.cat === 'F' ? 'transparent' : colors.orange;
         const rbg = b.cat === 'F' ? 'transparent' : colors.lightGreen;
-        if (bi > 0) bodyHtml += '<tr><td colspan="20" class="py-2">&nbsp;</td></tr>';
+        // Riga vuota tra blocchi. Nel 2° giro "per classifica" (reversed) la
+        // riga separa SOLO Early da Late: uomini e donne della stessa sessione
+        // restano contigui (simmetria). Negli altri giri (giovanili) la riga
+        // vuota resta tra tutti i blocchi.
+        if (bi > 0) {
+          const sessionChange = costruiti[bi - 1].session !== b.session;
+          const addBlank = reversedTriplet ? sessionChange : true;
+          if (addBlank) bodyHtml += '<tr><td colspan="20" class="py-2">&nbsp;</td></tr>';
+        }
         bodyHtml += this.buildGroupTableRows(
           tee1, tee10, colore, lbg, rbg, blockTime, gap, b.cat, 1
         );

@@ -172,7 +172,7 @@ $link = __DIR__ . '/storage';
 symlink($target, $link);
 echo "✅ Symlink creato!";
 ?&gt;</pre>
-                            <p class="mt-2">Poi visita: <code class="bg-red-100 px-1 rounded">https://tuosito.it/create-symlink.php</code></p>
+                            <p class="mt-2">Poi visita: <code class="bg-red-100 px-1 rounded">{{ url('/create-symlink.php') }}</code></p>
                         </div>
                     </div>
                 </div>
