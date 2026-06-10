@@ -42,7 +42,11 @@ class LoginRequest extends FormRequest
     {
         $this->ensureIsNotRateLimited();
 
-        if (! Auth::attempt($this->only('email', 'password'), $this->boolean('remember'))) {
+        // is_active=true come vincolo di credenziale: l'utente disattivato
+        // riceve lo stesso messaggio generico di credenziali errate.
+        $credentials = array_merge($this->only('email', 'password'), ['is_active' => true]);
+
+        if (! Auth::attempt($credentials, $this->boolean('remember'))) {
             RateLimiter::hit($this->throttleKey());
 
             throw ValidationException::withMessages([

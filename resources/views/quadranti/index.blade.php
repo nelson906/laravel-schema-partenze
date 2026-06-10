@@ -7,7 +7,8 @@
 
     {{-- Stili custom (la view originale li metteva in @push('styles'); qui inline) --}}
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="//code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
+    <link rel="stylesheet" href="https://code.jquery.com/ui/1.13.3/themes/base/jquery-ui.css"
+          integrity="sha256-DcjZoj+4EdXndbnrXsdWkiAgx9N0PiUYY0cPl2ni7vg=" crossorigin="anonymous">
     <style>
         .ui-datepicker { @apply bg-white shadow-lg rounded-lg p-4; }
         .ui-datepicker-header { @apply bg-indigo-600 text-white rounded-t-lg p-2 mb-2; }
@@ -314,8 +315,10 @@
     </div>
 
     {{-- Script CDN (jQuery, jQuery UI, SheetJS) + bootstrap modulo quadranti --}}
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"
+            integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
+    <script src="https://code.jquery.com/ui/1.13.3/jquery-ui.min.js"
+            integrity="sha256-sw0iNNXmOJbQhYFuC9OF2kOlD5KQKe1y5lfBn4C9Sjg=" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
     @vite(['resources/js/quadranti/quadranti.js'])

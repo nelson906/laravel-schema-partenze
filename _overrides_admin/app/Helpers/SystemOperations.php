@@ -251,6 +251,14 @@ class SystemOperations
      */
     public static function restoreDatabase(string $filename): array
     {
+        // Anti path-traversal: solo nome file semplice con estensione .sql,
+        // confinato in storage/backups/database.
+        $filename = basename($filename);
+
+        if (! preg_match('/^[\w\-. ]+\.sql$/', $filename)) {
+            return ['success' => false, 'output' => 'Nome file backup non valido'];
+        }
+
         $filepath = storage_path('backups/database/'.$filename);
 
         if (! File::exists($filepath)) {

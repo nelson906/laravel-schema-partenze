@@ -11,6 +11,11 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Logout forzato per utenti disattivati con sessione ancora aperta.
+        $middleware->web(append: [
+            \App\Http\Middleware\EnsureUserIsActive::class,
+        ]);
+
         $middleware->alias([
             'super_admin' => \App\Http\Middleware\SuperAdmin::class,
             'admin'       => \App\Http\Middleware\AdminAccess::class,

@@ -32,6 +32,15 @@ class User extends Authenticatable
         'remember_token',
     ];
 
+    /**
+     * Default applicativi: allineati al default DB (migration is_active=true).
+     * Senza questo, un'istanza appena creata (es. factory nei test) avrebbe
+     * is_active=null in memoria e EnsureUserIsActive la butterebbe fuori.
+     */
+    protected $attributes = [
+        'is_active' => true,
+    ];
+
     protected function casts(): array
     {
         return [
