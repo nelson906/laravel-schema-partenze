@@ -92,20 +92,37 @@ i flight non pieni:
 
 ---
 
-## 4. Le sei gare come DATI
-Dai tuoi tre schemi (54/72, Patrocinate/Trofei, Giovanili):
+## 4. Le gare come DATI — notazione stringa `FORMA-VERSO`
 
-| Gara                        | Giro            | forma         | reversed |
-|-----------------------------|-----------------|---------------|----------|
-| 54 / 72 buche               | 1° giro         | U             | no       |
-| 54 / 72 buche               | 2° giro         | U-rovesciata  | no       |
-| 54 / 72 buche               | 3° giro (finale)| U-rovesciata  | sì       |
-| Gare Patrocinate / Trofei   | 1° giro         | U             | no       |
-| Gare Patrocinate / Trofei   | 2° giro         | U-rovesciata  | sì       |
-| Gare Giovanili / T. Soldati | giro unico      | U-rovesciata  | no       |
+Ogni sezione (Early/Late) di ogni giro è descritta da UNA stringa
+(`parseForma` in config.js):
 
-(il `verso` sn-dx / dx-sn di ciascun giro lo fissiamo insieme leggendo gli
-schemi; la tabella sopra è la struttura, da confermare.)
+```
+FORMA  'U' (∪) · 'UR' (∩, U rovesciata) · 'S' (entrambi i tee in giù)
+VERSO  'L/R' (il percorso parte da Tee 1) · 'R/L' (parte da Tee 10)
+```
+
+| Gara                        | Giro             | Early    | Late     | reversed |
+|-----------------------------|------------------|----------|----------|----------|
+| 54 / 72 buche               | 1° giro          | UR-R/L   | U-R/L    | no       |
+| 54 / 72 buche               | 2° giro          | U-L/R    | UR-L/R   | no       |
+| 54 / 72 buche               | 3°/4° (finale)   | UR-L/R   | UR-L/R   | sì       |
+| Gare Patrocinate / Trofei   | 1° giro          | UR-R/L   | U-R/L    | no       |
+| Gare Patrocinate / Trofei   | 2° giro          | UR-L/R   | UR-L/R   | sì       |
+| Gare Giovanili / T. Soldati | giro unico       | UR-L/R   | UR-L/R   | no       |
+| Prova di gioco SNP          | 1° giro          | UR-R/L   | S-R/L    | no       |
+| Prova di gioco SNP          | 2° giro          | S-L/R    | UR-L/R   | no       |
+| Prova di gioco SNP          | 3°/4° (coppie)   | —        | —        | —        |
+
+### 4.1 Prova di gioco Scuola Nazionale Professionisti (Appendice F)
+- 132 uomini, nessuna donna; taglio FISSO a 52 dopo 2 giri (`cutFixed`).
+- Giri 1-2 (ordine di merito, solo doppio tee): il campo è diviso in due metà
+  per ranghi che ruotano tra le sessioni (`earlyHalf: 'bassa' | 'alta'`).
+  La forma **S** = i due tee scorrono nella STESSA direzione (né ∪ né ∩):
+  1° giro Late (Tee1 100→132 ↓ · Tee10 67→99 ↓) e 2° giro Early.
+- Giri 3-4 (ordine di classifica, solo TEE UNICO): flight da 2 in classifica
+  INVERSA (match 1 = 52·51 … match 26 = 2·1), gap 8′ con pausa extra di 5′
+  ogni 8 match (non a ridosso della fine). Descrittore `coppie`.
 
 ---
 

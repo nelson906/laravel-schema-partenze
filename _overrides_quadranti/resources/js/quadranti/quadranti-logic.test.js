@@ -18,7 +18,7 @@ beforeAll(() => {
 });
 
 import { QuadrantiLogic, mergeFedergolfResponses, normalizeGaraTitle } from './quadranti-logic.js';
-import { DEFAULT_CONFIG, COMPETITION_FORMATS } from './config.js';
+import { DEFAULT_CONFIG, COMPETITION_FORMATS, parseForma } from './config.js';
 import { storage } from './utils.js';
 
 // Helper: pulisce le sole chiavi di storage che generateSingleTee/Double Tee
@@ -1797,16 +1797,33 @@ describe('COMPETITION_FORMATS — descrittore dei formati di gara', () => {
       });
   });
 
-  it('ogni giro ha early/late con forma (U/UR) e verso (sn-dx/dx-sn) validi', () => {
+  it('ogni giro con sezioni ha early/late in notazione stringa FORMA-VERSO valida', () => {
     Object.values(COMPETITION_FORMATS).forEach((fmt) => {
       fmt.rounds.forEach((r) => {
+        // I giri a coppie (Prova di gioco 3°/4°) non hanno sezioni early/late.
+        if (r.coppie) {
+          expect(r.early).toBeUndefined();
+          expect(r.late).toBeUndefined();
+          return;
+        }
         ['early', 'late'].forEach((sez) => {
-          expect(['U', 'UR']).toContain(r[sez].forma);
-          expect(['sn-dx', 'dx-sn']).toContain(r[sez].verso);
+          expect(typeof r[sez]).toBe('string');
+          const { forma, verso } = parseForma(r[sez]);
+          expect(['U', 'UR', 'S']).toContain(forma);
+          expect(['sn-dx', 'dx-sn']).toContain(verso);
         });
         expect(typeof r.reversed).toBe('boolean');
       });
     });
+  });
+
+  it('parseForma decodifica la notazione stringa nei valori interni', () => {
+    expect(parseForma('UR-R/L')).toEqual({ forma: 'UR', verso: 'dx-sn' });
+    expect(parseForma('UR-L/R')).toEqual({ forma: 'UR', verso: 'sn-dx' });
+    expect(parseForma('U-R/L')).toEqual({ forma: 'U', verso: 'dx-sn' });
+    expect(parseForma('U-L/R')).toEqual({ forma: 'U', verso: 'sn-dx' });
+    expect(parseForma('S-L/R')).toEqual({ forma: 'S', verso: 'sn-dx' });
+    expect(parseForma('S-R/L')).toEqual({ forma: 'S', verso: 'dx-sn' });
   });
 });
 
@@ -2032,23 +2049,23 @@ describe('Quadranti a U rovesciata (forma UR) — giovanili / patrocinate', () =
       .map((m) => parseInt(m.match(/>(\d+)/)[1], 10));
   };
 
-  it('descrittore: early/late con forma e verso corretti per ogni formato', () => {
+  it('descrittore: early/late in notazione stringa corretti per ogni formato', () => {
     const round = (g, i) => COMPETITION_FORMATS[g].rounds[i];
-    // Blocco UR puro: entrambe le sezioni forma 'UR', verso 'sn-dx'.
-    expect(round('Gara Giovanile', 0).early).toEqual({ forma: 'UR', verso: 'sn-dx' });
-    expect(round('Gara Giovanile', 0).late).toEqual({ forma: 'UR', verso: 'sn-dx' });
+    // Blocco UR puro: entrambe le sezioni 'UR-L/R'.
+    expect(round('Gara Giovanile', 0).early).toBe('UR-L/R');
+    expect(round('Gara Giovanile', 0).late).toBe('UR-L/R');
     expect(round('Gara Giovanile', 0).reversed).toBe(false);
-    expect(round('Teodoro Soldati', 0).early.forma).toBe('UR');
-    expect(round('Gara con patrocinio FIG', 1).early).toEqual({ forma: 'UR', verso: 'sn-dx' });
+    expect(parseForma(round('Teodoro Soldati', 0).early).forma).toBe('UR');
+    expect(round('Gara con patrocinio FIG', 1).early).toBe('UR-L/R');
     expect(round('Gara con patrocinio FIG', 1).reversed).toBe(true);
     expect(round('Trofeo Giovanile Federale', 1).reversed).toBe(true);
-    // 1° giro = cerchio: Early {UR, dx-sn}, Late {U, dx-sn}.
-    expect(round('Gara con patrocinio FIG', 0).early).toEqual({ forma: 'UR', verso: 'dx-sn' });
-    expect(round('Gara con patrocinio FIG', 0).late).toEqual({ forma: 'U', verso: 'dx-sn' });
-    expect(round('Gara 54 buche', 0).early).toEqual({ forma: 'UR', verso: 'dx-sn' });
-    // 2° giro = clessidra: Early {U, sn-dx}, Late {UR, sn-dx}.
-    expect(round('Gara 54 buche', 1).early).toEqual({ forma: 'U', verso: 'sn-dx' });
-    expect(round('Gara 54 buche', 1).late).toEqual({ forma: 'UR', verso: 'sn-dx' });
+    // 1° giro = cerchio: Early 'UR-R/L', Late 'U-R/L'.
+    expect(round('Gara con patrocinio FIG', 0).early).toBe('UR-R/L');
+    expect(round('Gara con patrocinio FIG', 0).late).toBe('U-R/L');
+    expect(round('Gara 54 buche', 0).early).toBe('UR-R/L');
+    // 2° giro = clessidra: Early 'U-L/R', Late 'UR-L/R'.
+    expect(round('Gara 54 buche', 1).early).toBe('U-L/R');
+    expect(round('Gara 54 buche', 1).late).toBe('UR-L/R');
   });
 
   it('Gara Giovanile: 3 blocchi ∩ — uomini Early, donne, uomini Late', () => {
@@ -2211,5 +2228,266 @@ describe('Numerazione flight unificata (Tee 1 continuo, poi Tee 10)', () => {
     expect(flightNums(l, 'M', 10)).toEqual(seq(10, 18));
     expect(flightNums(l, 'F', 1)).toEqual(seq(1, 5));
     expect(flightNums(l, 'F', 10)).toEqual(seq(6, 9));
+  });
+});
+
+// ─── PROVA DI GIOCO SCUOLA NAZIONALE PROFESSIONISTI — Appendice F ────────────
+// Riferimento: PDF "Appendice F_Prova di gioco" (132 uomini, taglio fisso 52).
+// Giri 1-2 doppio tee in ordine di merito con metà campo che ruotano; il
+// 1° giro Late e il 2° giro Early hanno forma 'S' (entrambi i tee in giù).
+// Giri 3-4 tee unico a coppie in classifica inversa, gap 8' + pausa 5' ogni 8.
+describe('Prova di gioco SNP — Appendice F', () => {
+  beforeEach(() => { resetPlayerStorage(); });
+
+  const make = (over = {}) => makeLogic({
+    garaNT: 'Prova di gioco', players: 132, proette: 0, playersPerFlight: 3,
+    nominativo: 'Off', startTime: '07:30', gap: '00:11', round: '04:30',
+    playersCut: 52, proetteCut: 0, ...over,
+  });
+
+  // players dei flight di un tee, nell'ordine di render (Early poi Late)
+  const flightsTee = (l, tee) => l.figFlights
+    .filter((f) => f.tee === tee)
+    .map((f) => f.group.players);
+
+  it('descrittore: 4 giri solo uomini, forme UR/S in stringa, taglio fisso 52', () => {
+    const f = COMPETITION_FORMATS['Prova di gioco'];
+    expect(f.rounds.map((r) => r.id)).toEqual(['prima', 'seconda', 'terzo', 'quarto']);
+    expect(f.rounds.every((r) => r.gender === 'men')).toBe(true);
+    expect(f.cutAfter).toBe(2);
+    expect(f.cutFixed).toEqual({ players: 52, proette: 0 });
+    expect(f.defaults).toEqual({ players: 132, proette: 0 });
+    expect(f.rounds[0].early).toBe('UR-R/L');
+    expect(f.rounds[0].late).toBe('S-R/L');
+    expect(f.rounds[0].earlyHalf).toBe('bassa');
+    expect(f.rounds[1].early).toBe('S-L/R');
+    expect(f.rounds[1].late).toBe('UR-L/R');
+    expect(f.rounds[1].earlyHalf).toBe('alta');
+    // Giri 1-2 solo doppio tee; giri 3-4 solo tee unico, a coppie.
+    expect(f.rounds[0].tee).toEqual(['double']);
+    expect(f.rounds[2].tee).toEqual(['single']);
+    expect(f.rounds[2].coppie).toEqual({ mod: 2, pausaOgni: 8, pausaExtra: '00:05' });
+    expect(f.rounds[3].coppie).toEqual({ mod: 2, pausaOgni: 8, pausaExtra: '00:05' });
+  });
+
+  it('1° giro: Early UR-R/L (Tee1 34→66 · Tee10 31,32,33…1,2,3) + Late S-R/L (Tee1 100→132 · Tee10 67→99)', () => {
+    const l = make();
+    l.generateDoubleTee('prima');
+    const t1 = flightsTee(l, 1);
+    const t10 = flightsTee(l, 10);
+    expect(t1).toHaveLength(22);  // 11 Early + 11 Late
+    expect(t10).toHaveLength(22);
+    // Early — ∩ che parte da destra (Appendice F, 1° giro)
+    expect(t1[0]).toEqual([34, 35, 36]);
+    expect(t1[10]).toEqual([64, 65, 66]);
+    expect(t10[0]).toEqual([31, 32, 33]);
+    expect(t10[10]).toEqual([1, 2, 3]);
+    // Late — forma S: ENTRAMBI i tee scorrono in giù
+    expect(t1[11]).toEqual([100, 101, 102]);
+    expect(t1[21]).toEqual([130, 131, 132]);
+    expect(t10[11]).toEqual([67, 68, 69]);
+    expect(t10[21]).toEqual([97, 98, 99]);
+  });
+
+  it('2° giro: Early S-L/R (Tee1 67→99 · Tee10 100→132) + Late UR-L/R (Tee1 31…1 · Tee10 34→66)', () => {
+    const l = make();
+    l.generateDoubleTee('seconda');
+    const t1 = flightsTee(l, 1);
+    const t10 = flightsTee(l, 10);
+    // Early — forma S che parte da sinistra
+    expect(t1[0]).toEqual([67, 68, 69]);
+    expect(t1[10]).toEqual([97, 98, 99]);
+    expect(t10[0]).toEqual([100, 101, 102]);
+    expect(t10[10]).toEqual([130, 131, 132]);
+    // Late — ∩ che parte da sinistra
+    expect(t1[11]).toEqual([31, 32, 33]);
+    expect(t1[21]).toEqual([1, 2, 3]);
+    expect(t10[11]).toEqual([34, 35, 36]);
+    expect(t10[21]).toEqual([64, 65, 66]);
+  });
+
+  it('1° giro: orari Early come Appendice F (07:30 → 09:20 con gap 11)', () => {
+    const l = make();
+    l.generateDoubleTee('prima');
+    const ore = l.figFlights.filter((f) => f.tee === 1).map((f) => f.ora);
+    expect(ore[0]).toBe('07:30');
+    expect(ore[10]).toBe('09:20');
+  });
+
+  it('numerazione flight unificata: Tee 1 = 1..22, Tee 10 = 23..44', () => {
+    const l = make();
+    l.generateDoubleTee('prima');
+    const nums = (tee) => l.figFlights
+      .filter((f) => f.tee === tee)
+      .map((f) => f.group.flightNumber);
+    expect(nums(1)).toEqual(Array.from({ length: 22 }, (_, i) => i + 1));
+    expect(nums(10)).toEqual(Array.from({ length: 22 }, (_, i) => i + 23));
+  });
+
+  it('3° giro a coppie: 26 match 52·51 → 2·1 con pause dopo 8° e 16° (07:30, 08:39, 09:48, 11:00)', () => {
+    const l = make({ gap: '00:08' });
+    const html = l.generateSingleTee('terzo');
+    // Orari riga per riga
+    const ore = html.match(/\d{2}:\d{2}/g) || [];
+    expect(ore).toHaveLength(26);
+    expect(ore[0]).toBe('07:30');
+    expect(ore[7]).toBe('08:26');   // 8° match
+    expect(ore[8]).toBe('08:39');   // pausa +5 dopo l'8°
+    expect(ore[15]).toBe('09:35');  // 16° match
+    expect(ore[16]).toBe('09:48');  // pausa +5 dopo il 16°
+    expect(ore[23]).toBe('10:44');  // 24° match: NESSUNA pausa (restano ≤ 8 match)
+    expect(ore[24]).toBe('10:52');
+    expect(ore[25]).toBe('11:00');
+    // Coppie in classifica inversa: 52·51 apre, 2·1 chiude
+    const players = (html.match(/border-gray-300" >(\d+)</g) || [])
+      .map((m) => parseInt(m.match(/>(\d+)</)[1], 10));
+    expect(players).toHaveLength(52);
+    expect(players.slice(0, 2)).toEqual([52, 51]);
+    expect(players.slice(-2)).toEqual([2, 1]);
+  });
+
+  it('4° giro a coppie: identico schema del 3° (uomini residui dopo il taglio)', () => {
+    const l = make({ gap: '00:08' });
+    const html = l.generateSingleTee('quarto');
+    const ore = html.match(/\d{2}:\d{2}/g) || [];
+    expect(ore).toHaveLength(26);
+    expect(ore[25]).toBe('11:00');
+  });
+});
+
+describe('REGRESSIONE — blocchiBuilders dispatch (layout esplicito vs. derivazione)', () => {
+  beforeEach(() => { resetPlayerStorage(); });
+
+  // ── Config: field `layout` presente sui round giusti ─────────────────────
+  it('COMPETITION_FORMATS: layout esplicito sui giri UR non-finale', () => {
+    const r = (g, i) => COMPETITION_FORMATS[g].rounds[i];
+    // giovanili
+    expect(r('Gara Giovanile',          0).layout).toBe('giovanili');
+    expect(r('Teodoro Soldati',         0).layout).toBe('giovanili');
+    // reversed-interleaved
+    expect(r('Gara con patrocinio FIG', 1).layout).toBe('reversed-interleaved');
+    expect(r('Trofeo Giovanile Federale',1).layout).toBe('reversed-interleaved');
+    // sessioni-miste
+    expect(r('Prova di gioco',          0).layout).toBe('sessioni-miste');
+    expect(r('Prova di gioco',          1).layout).toBe('sessioni-miste');
+  });
+
+  it('COMPETITION_FORMATS: giri cerchio/clessidra e finali NON hanno layout esplicito', () => {
+    const r = (g, i) => COMPETITION_FORMATS[g].rounds[i];
+    // 54 buche: 1°/2° = cerchio/clessidra; finale = isFinaleRound, non entra nel branch
+    expect(r('Gara 54 buche', 0).layout).toBeUndefined();
+    expect(r('Gara 54 buche', 1).layout).toBeUndefined();
+    expect(r('Gara 54 buche', 2).layout).toBeUndefined(); // finale
+    // patrocinate 1° giro = cerchio, nessun layout
+    expect(r('Gara con patrocinio FIG', 0).layout).toBeUndefined();
+  });
+
+  // ── Unknown layout → throw ────────────────────────────────────────────────
+  it('layout sconosciuto in roundDesc → throw con messaggio chiaro', () => {
+    // Iniettiamo un roundDesc con layout inesistente modificando il config a runtime.
+    // QuadrantiLogic legge roundDesc da COMPETITION_FORMATS[garaNT].rounds[round].
+    // Per fare il test senza toccare il file, usiamo un formato con layout='giovanili'
+    // e verifichiamo che layout='xyz' (non registrato) lanci. Creiamo un subclass
+    // temporanea che sovrascrive il roundDesc prima della chiamata.
+    const l = makeLogic({
+      garaNT: 'Gara Giovanile', players: 9, proette: 6, playersPerFlight: 3,
+      nominativo: 'Off', startTime: '08:00', gap: '00:10', round: '04:30',
+    });
+    // Patch il formato per la durata del test (ripristiniamo dopo).
+    const origLayout = COMPETITION_FORMATS['Gara Giovanile'].rounds[0].layout;
+    COMPETITION_FORMATS['Gara Giovanile'].rounds[0].layout = 'xyz-non-esiste';
+    try {
+      expect(() => l.generateDoubleTee('prima')).toThrow(/xyz-non-esiste/);
+    } finally {
+      COMPETITION_FORMATS['Gara Giovanile'].rounds[0].layout = origLayout;
+    }
+  });
+
+  // ── layout esplicito vs. derivazione automatica: stesso output ────────────
+  it('giovanili: layout esplicito produce output identico alla derivazione', () => {
+    // Riferimento: config standard con layout:'giovanili' già impostato.
+    const lRef = makeLogic({
+      garaNT: 'Gara Giovanile', players: 30, proette: 12, playersPerFlight: 3,
+      nominativo: 'Off', startTime: '08:00', gap: '00:10', round: '04:30',
+    });
+    const htmlRef = lRef.generateDoubleTee('prima');
+
+    // Patch temporanea: rimuovi layout per forzare la derivazione dai flag.
+    const round0 = COMPETITION_FORMATS['Gara Giovanile'].rounds[0];
+    const origLayout = round0.layout;
+    delete round0.layout;
+    try {
+      const lDerived = makeLogic({
+        garaNT: 'Gara Giovanile', players: 30, proette: 12, playersPerFlight: 3,
+        nominativo: 'Off', startTime: '08:00', gap: '00:10', round: '04:30',
+      });
+      const htmlDerived = lDerived.generateDoubleTee('prima');
+      expect(htmlDerived).toBe(htmlRef);
+    } finally {
+      round0.layout = origLayout;
+    }
+  });
+
+  it('reversed-interleaved: layout esplicito produce output identico alla derivazione', () => {
+    const round1 = COMPETITION_FORMATS['Gara con patrocinio FIG'].rounds[1];
+    const lRef = makeLogic({
+      garaNT: 'Gara con patrocinio FIG', players: 24, proette: 12, playersPerFlight: 3,
+      nominativo: 'Off', startTime: '08:00', gap: '00:10', round: '04:30',
+    });
+    const htmlRef = lRef.generateDoubleTee('seconda');
+
+    const origLayout = round1.layout;
+    delete round1.layout;
+    try {
+      const lDerived = makeLogic({
+        garaNT: 'Gara con patrocinio FIG', players: 24, proette: 12, playersPerFlight: 3,
+        nominativo: 'Off', startTime: '08:00', gap: '00:10', round: '04:30',
+      });
+      expect(lDerived.generateDoubleTee('seconda')).toBe(htmlRef);
+    } finally {
+      round1.layout = origLayout;
+    }
+  });
+
+  it('sessioni-miste: layout esplicito produce output identico alla derivazione', () => {
+    const round0 = COMPETITION_FORMATS['Prova di gioco'].rounds[0];
+    const lRef = makeLogic({
+      garaNT: 'Prova di gioco', players: 20, proette: 0, playersPerFlight: 3,
+      nominativo: 'Off', startTime: '08:00', gap: '00:10', round: '04:30',
+    });
+    const htmlRef = lRef.generateDoubleTee('prima');
+
+    const origLayout = round0.layout;
+    delete round0.layout;
+    try {
+      const lDerived = makeLogic({
+        garaNT: 'Prova di gioco', players: 20, proette: 0, playersPerFlight: 3,
+        nominativo: 'Off', startTime: '08:00', gap: '00:10', round: '04:30',
+      });
+      expect(lDerived.generateDoubleTee('prima')).toBe(htmlRef);
+    } finally {
+      round0.layout = origLayout;
+    }
+  });
+
+  // ── Retrocompatibilità: giri senza `layout` usano derivazione ─────────────
+  it('retrocompat: giro UR senza layout field usa derivazione da isBloccoUR/reversed', () => {
+    // 54 buche finale: isFinaleRound=true → intercettato prima del branch blocchiBuilders.
+    // Usiamo Gara Giovanile senza layout: deve comunque produrre 6 figQuadranti.
+    const round0 = COMPETITION_FORMATS['Gara Giovanile'].rounds[0];
+    const origLayout = round0.layout;
+    delete round0.layout;
+    try {
+      const l = makeLogic({
+        garaNT: 'Gara Giovanile', players: 30, proette: 12, playersPerFlight: 3,
+        nominativo: 'Off', startTime: '08:00', gap: '00:10', round: '04:30',
+      });
+      l.generateDoubleTee('prima');
+      expect(l.figQuadranti).toHaveLength(6); // 3 blocchi × 2 tee
+      expect(l.figQuadranti[0].categoria).toBe('Uomini');
+      expect(l.figQuadranti[2].categoria).toBe('Donne');
+    } finally {
+      round0.layout = origLayout;
+    }
   });
 });

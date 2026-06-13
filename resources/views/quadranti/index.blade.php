@@ -86,6 +86,7 @@
                                     <option value="Trofeo Giovanile Federale">Trofeo Giovanile Federale</option>
                                     <option value="Gara Giovanile">Gara Giovanile</option>
                                     <option value="Teodoro Soldati">Teodoro Soldati</option>
+                                    <option value="Prova di gioco">Prova di gioco SNP</option>
                                 </select>
                             </div>
 

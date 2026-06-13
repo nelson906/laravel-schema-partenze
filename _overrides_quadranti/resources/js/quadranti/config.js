@@ -40,8 +40,26 @@ export const COMPETITION_TYPES = {
   PATROCINIO: 'Gara con patrocinio FIG',
   TROFEO_GIOVANILE: 'Trofeo Giovanile Federale',
   GARA_GIOVANILE: 'Gara Giovanile',
-  TEODORO_SOLDATI: 'Teodoro Soldati'
+  TEODORO_SOLDATI: 'Teodoro Soldati',
+  PROVA_GIOCO: 'Prova di gioco'
 };
+
+/**
+ * Notazione stringa dei quadranti: '<FORMA>-<VERSO>'.
+ *
+ *   FORMA  'U'  (∪)  un tee scende la pagina, l'altro la risale
+ *          'UR' (∩)  U rovesciata
+ *          'S'       entrambi i tee nella STESSA direzione (in giù)
+ *   VERSO  'L/R'  il percorso dei numeri parte da sinistra (Tee 1)  → 'sn-dx'
+ *          'R/L'  il percorso parte da destra (Tee 10)              → 'dx-sn'
+ *
+ * Esempi: 'UR-R/L' (cerchio 1° giro Early), 'U-R/L', 'S-L/R'.
+ * Ritorna i valori interni storici { forma, verso } usati dal motore.
+ */
+export function parseForma(str) {
+  const [forma, verso] = String(str).split('-');
+  return { forma, verso: verso === 'R/L' ? 'dx-sn' : 'sn-dx' };
+}
 
 export const TEE_TYPES = {
   DOUBLE: 'Doppie Partenze',
@@ -77,19 +95,26 @@ export const ROUND_TYPES = {
  *   - type      'qualifying' = campo pieno ; 'finale' = campo ridotto post-taglio
  *   - gender    'both' = uomini + donne ; 'men' = solo uomini
  *   - tee       varianti tee ammesse: 'double' e/o 'single'
- *   - early     quadranti della sezione Early: { forma, verso }
- *   - late      quadranti della sezione Late:  { forma, verso }
- *               forma : 'U' (∪) oppure 'UR' (∩) — la curvatura dell'arco.
- *               verso : 'sn-dx' oppure 'dx-sn' — la direzione di lettura,
- *                       cioè se la sequenza dei numeri cresce verso destra
- *                       o verso sinistra.
- *               forma e verso sono INDIPENDENTI: una UR può essere sn-dx o
- *               dx-sn, e così una U. (NON si usa "clockwise": il senso orario
- *               si legge sn→dx su una ∩ ma dx→sn su una ∪ — ambiguo.) Esempi:
- *                 cerchio   (1° giro) = early {UR,dx-sn} · late {U, dx-sn}
- *                 clessidra (2° giro) = early {U, sn-dx} · late {UR,sn-dx}
- *                 blocco UR (giovanili/patrocinate 2°/finale) = entrambe {UR,sn-dx}
+ *   - early     forma dei quadranti della sezione Early — stringa 'FORMA-VERSO'
+ *   - late      forma dei quadranti della sezione Late  — stringa 'FORMA-VERSO'
+ *               La stringa è decodificata da parseForma() (vedi sopra):
+ *                 FORMA 'U' (∪) · 'UR' (∩) · 'S' (entrambi i tee in giù)
+ *                 VERSO 'L/R' (parte da Tee 1) · 'R/L' (parte da Tee 10)
+ *               forma e verso sono INDIPENDENTI: una UR può essere L/R o R/L,
+ *               e così una U. (NON si usa "clockwise": il senso orario si
+ *               legge sn→dx su una ∩ ma dx→sn su una ∪ — ambiguo.) Esempi:
+ *                 cerchio   (1° giro) = early 'UR-R/L' · late 'U-R/L'
+ *                 clessidra (2° giro) = early 'U-L/R'  · late 'UR-L/R'
+ *                 blocco UR (giovanili/patrocinate 2°/finale) = entrambe 'UR-L/R'
  *   - reversed  true = terzetto interno invertito (3·2·1 invece di 1·2·3)
+ *   - earlyHalf (solo formati a "sessioni miste", es. Prova di gioco) quale
+ *               metà del campo per ranghi gioca Early: 'bassa' | 'alta'.
+ *               La presenza del campo instrada il giro al ramo blocchi del
+ *               motore anche con forme miste (UR + S).
+ *   - coppie    (solo giri finale a tee unico, es. Prova di gioco 3°/4° giro)
+ *               { mod, pausaOgni, pausaExtra }: flight da `mod` giocatori in
+ *               classifica INVERSA (ultimi partono primi), pausa di
+ *               `pausaExtra` ogni `pausaOgni` match.
  *
  * Il motore manda al ramo "∩" i giri con entrambe le sezioni di forma 'UR';
  * gli altri (sezioni miste = cerchio/clessidra) vanno al flusso di
@@ -118,9 +143,9 @@ export const COMPETITION_FORMATS = {
     cutAfter: 2,
     defaults: { players: 144, proette: 48 },
     rounds: [
-      { id: 'prima',   label: '1° giro',          type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'UR', verso: 'dx-sn' }, late: { forma: 'U',  verso: 'dx-sn' }, reversed: false },
-      { id: 'seconda', label: '2° giro',          type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'U',  verso: 'sn-dx' }, late: { forma: 'UR', verso: 'sn-dx' }, reversed: false },
-      { id: 'finale',  label: '3° giro (finale)', type: 'finale',     gender: 'both', tee: ['double', 'single'], early: { forma: 'UR', verso: 'sn-dx' }, late: { forma: 'UR', verso: 'sn-dx' }, reversed: true }
+      { id: 'prima',   label: '1° giro',          type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: 'UR-R/L', late: 'U-R/L', reversed: false },
+      { id: 'seconda', label: '2° giro',          type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: 'U-L/R', late: 'UR-L/R', reversed: false },
+      { id: 'finale',  label: '3° giro (finale)', type: 'finale',     gender: 'both', tee: ['double', 'single'], early: 'UR-L/R', late: 'UR-L/R', reversed: true }
     ]
   },
 
@@ -129,10 +154,10 @@ export const COMPETITION_FORMATS = {
     cutAfter: 2,
     defaults: { players: 144, proette: 48 },
     rounds: [
-      { id: 'prima',   label: '1° giro',                  type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'UR', verso: 'dx-sn' }, late: { forma: 'U',  verso: 'dx-sn' }, reversed: false },
-      { id: 'seconda', label: '2° giro',                  type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'U',  verso: 'sn-dx' }, late: { forma: 'UR', verso: 'sn-dx' }, reversed: false },
-      { id: 'terzo',   label: '3° giro (finale)',         type: 'finale',     gender: 'both', tee: ['double', 'single'], early: { forma: 'UR', verso: 'sn-dx' }, late: { forma: 'UR', verso: 'sn-dx' }, reversed: true },
-      { id: 'quarto',  label: '4° giro (finale, uomini)', type: 'finale',     gender: 'men',  tee: ['double', 'single'], early: { forma: 'UR', verso: 'sn-dx' }, late: { forma: 'UR', verso: 'sn-dx' }, reversed: true }
+      { id: 'prima',   label: '1° giro',                  type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: 'UR-R/L', late: 'U-R/L', reversed: false },
+      { id: 'seconda', label: '2° giro',                  type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: 'U-L/R', late: 'UR-L/R', reversed: false },
+      { id: 'terzo',   label: '3° giro (finale)',         type: 'finale',     gender: 'both', tee: ['double', 'single'], early: 'UR-L/R', late: 'UR-L/R', reversed: true },
+      { id: 'quarto',  label: '4° giro (finale, uomini)', type: 'finale',     gender: 'men',  tee: ['double', 'single'], early: 'UR-L/R', late: 'UR-L/R', reversed: true }
     ]
   },
 
@@ -143,8 +168,8 @@ export const COMPETITION_FORMATS = {
     cutAfter: null,
     defaults: { players: 90, proette: 42 },
     rounds: [
-      { id: 'prima',   label: '1° giro',                  type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'UR', verso: 'dx-sn' }, late: { forma: 'U',  verso: 'dx-sn' }, reversed: false },
-      { id: 'seconda', label: '2° giro (per classifica)', type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'UR', verso: 'sn-dx' }, late: { forma: 'UR', verso: 'sn-dx' }, reversed: true }
+      { id: 'prima',   label: '1° giro',                  type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: 'UR-R/L', late: 'U-R/L', reversed: false },
+      { id: 'seconda', label: '2° giro (per classifica)', type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: 'UR-L/R', late: 'UR-L/R', reversed: true,  layout: 'reversed-interleaved' }
     ]
   },
 
@@ -154,8 +179,8 @@ export const COMPETITION_FORMATS = {
     cutAfter: null,
     defaults: { players: 90, proette: 42 },
     rounds: [
-      { id: 'prima',   label: '1° giro',                  type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'UR', verso: 'dx-sn' }, late: { forma: 'U',  verso: 'dx-sn' }, reversed: false },
-      { id: 'seconda', label: '2° giro (per classifica)', type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'UR', verso: 'sn-dx' }, late: { forma: 'UR', verso: 'sn-dx' }, reversed: true }
+      { id: 'prima',   label: '1° giro',                  type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: 'UR-R/L', late: 'U-R/L', reversed: false },
+      { id: 'seconda', label: '2° giro (per classifica)', type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: 'UR-L/R', late: 'UR-L/R', reversed: true,  layout: 'reversed-interleaved' }
     ]
   },
 
@@ -168,7 +193,7 @@ export const COMPETITION_FORMATS = {
     cutAfter: null,
     defaults: { players: 90, proette: 42 },
     rounds: [
-      { id: 'prima', label: 'Giro unico', type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'UR', verso: 'sn-dx' }, late: { forma: 'UR', verso: 'sn-dx' }, reversed: false }
+      { id: 'prima', label: 'Giro unico', type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: 'UR-L/R', late: 'UR-L/R', reversed: false, layout: 'giovanili' }
     ]
   },
 
@@ -179,7 +204,34 @@ export const COMPETITION_FORMATS = {
     cutAfter: null,
     defaults: { players: 90, proette: 42 },
     rounds: [
-      { id: 'prima', label: 'Giro unico', type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: { forma: 'UR', verso: 'sn-dx' }, late: { forma: 'UR', verso: 'sn-dx' }, reversed: false }
+      { id: 'prima', label: 'Giro unico', type: 'qualifying', gender: 'both', tee: ['double', 'single'], early: 'UR-L/R', late: 'UR-L/R', reversed: false, layout: 'giovanili' }
+    ]
+  },
+
+  // Prova di gioco Scuola Nazionale Professionisti (Appendice F).
+  // Solo uomini: 132 iscritti, taglio FISSO a 52 dopo 2 giri.
+  // Giri 1-2 (ordine di merito, doppio tee): il campo è diviso in due metà
+  // per ranghi che ruotano tra le sessioni (earlyHalf). Il 1° giro Late e il
+  // 2° giro Early hanno forma 'S': entrambi i tee scorrono nella stessa
+  // direzione (né ∪ né ∩) — vedi Appendice F:
+  //   1° giro Early: Tee1 34→66 ↓ · Tee10 31,32,33…1,2,3   = 'UR-R/L'
+  //   1° giro Late : Tee1 100→132 ↓ · Tee10 67→99 ↓        = 'S-R/L'
+  //   2° giro Early: Tee1 67→99 ↓ · Tee10 100→132 ↓        = 'S-L/R'
+  //   2° giro Late : Tee1 31,32,33…1,2,3 · Tee10 34→66 ↓   = 'UR-L/R'
+  // Giri 3-4 (ordine di classifica, TEE UNICO): coppie (flight da 2) in
+  // classifica INVERSA — match 1 = 52·51 … match 26 = 2·1 — con pausa extra
+  // di 5' ogni 8 match (Appendice F: 08:26→08:39, 09:35→09:48 con gap 8').
+  'Prova di gioco': {
+    label: 'Prova di gioco Scuola Nazionale Professionisti',
+    cutAfter: 2,
+    defaults: { players: 132, proette: 0 },
+    // Taglio fisso (non tabella FIG): 52 qualificati ai giri 3-4.
+    cutFixed: { players: 52, proette: 0 },
+    rounds: [
+      { id: 'prima',   label: '1° giro (ordine di merito)',     type: 'qualifying', gender: 'men', tee: ['double'], early: 'UR-R/L', late: 'S-R/L',  earlyHalf: 'bassa', reversed: false, layout: 'sessioni-miste' },
+      { id: 'seconda', label: '2° giro (ordine di merito)',     type: 'qualifying', gender: 'men', tee: ['double'], early: 'S-L/R',  late: 'UR-L/R', earlyHalf: 'alta',  reversed: false, layout: 'sessioni-miste' },
+      { id: 'terzo',   label: '3° giro (classifica, Tee 1)',    type: 'finale',     gender: 'men', tee: ['single'], coppie: { mod: 2, pausaOgni: 8, pausaExtra: '00:05' } },
+      { id: 'quarto',  label: '4° giro (classifica, Tee 1)',    type: 'finale',     gender: 'men', tee: ['single'], coppie: { mod: 2, pausaOgni: 8, pausaExtra: '00:05' } }
     ]
   }
 };

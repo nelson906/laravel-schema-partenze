@@ -114,6 +114,9 @@ class QuadrantiApp {
     // Show/hide campi taglio (visibili solo quando giornata=finale)
     this.toggleFinalCutFields();
 
+    // Vincola la variante tee a quelle ammesse dal giro corrente
+    this.enforceTeeVariant();
+
     // Update title based on round
     this.updateTableTitle();
   }
@@ -200,6 +203,26 @@ class QuadrantiApp {
    * @param {'M'|'F'} cat - Categoria da ricalcolare
    */
   applyFigCutFormula(cat) {
+    // Taglio FISSO del formato (descrittore `cutFixed`, es. Prova di gioco:
+    // 52 uomini ai giri 3-4): sostituisce la tabella FIG.
+    const fmtCut = COMPETITION_FORMATS[this.config.garaNT];
+    if (fmtCut && fmtCut.cutFixed) {
+      if (cat === 'M') {
+        const reg = parseInt(this.config.players) || 0;
+        const cut = Math.min(fmtCut.cutFixed.players || 0, reg);
+        this.config.playersCut = cut;
+        storage.set('playersCut', cut);
+        $('#players_cut').val(cut);
+      } else {
+        const reg = parseInt(this.config.proette) || 0;
+        const cut = Math.min(fmtCut.cutFixed.proette || 0, reg);
+        this.config.proetteCut = cut;
+        storage.set('proetteCut', cut);
+        $('#proette_cut').val(cut);
+      }
+      return;
+    }
+
     // Tabella maschile FIG (iscritti → ammessi). N >= 67 → 54.
     const TABELLA_M = {
       8: 7, 9: 8, 10: 8, 11: 9, 12: 10, 13: 11, 14: 12, 15: 12,
@@ -240,6 +263,31 @@ class QuadrantiApp {
       storage.set('proetteCut', cut);
       $('#proette_cut').val(cut);
     }
+  }
+
+  /**
+   * Vincola la variante tee a quelle ammesse dal giro corrente
+   * (roundDesc.tee in COMPETITION_FORMATS). Es. Prova di gioco: giri 1-2
+   * solo doppio tee, giri 3-4 solo tee unico. Se la variante corrente non è
+   * ammessa passa alla prima ammessa; il select #doppie_partenze viene
+   * disabilitato quando il giro ne ammette una sola.
+   */
+  enforceTeeVariant() {
+    const fmt = COMPETITION_FORMATS[this.config.garaNT];
+    const rd = fmt ? fmt.rounds.find((r) => r.id === this.config.giornata) : null;
+    const ammesse = rd && Array.isArray(rd.tee) && rd.tee.length ? rd.tee : null;
+    if (!ammesse) {
+      $('#doppie_partenze').prop('disabled', false);
+      return;
+    }
+    const corrente = this.config.doppiePartenze === TEE_TYPES.SINGLE ? 'single' : 'double';
+    if (!ammesse.includes(corrente)) {
+      const nuova = ammesse[0] === 'single' ? TEE_TYPES.SINGLE : TEE_TYPES.DOUBLE;
+      this.config.doppiePartenze = nuova;
+      $('#doppie_partenze').val(nuova);
+      storage.set('doppiePartenze', nuova);
+    }
+    $('#doppie_partenze').prop('disabled', ammesse.length === 1);
   }
 
   /**
@@ -373,6 +421,10 @@ $('#fig-strip').on('click', '#fig-strip-copy', (e) => {
     this.config.gap = $('#gap').val();
     this.config.compatto = $('#compatto').val();
     this.config.doppiePartenze = $('#doppie_partenze').val();
+
+  // Vincola la variante tee a quelle ammesse dal giro corrente (può
+  // correggere config.doppiePartenze PRIMA del salvataggio).
+  this.enforceTeeVariant();
 
   // Save configuration
   this.saveConfiguration();
