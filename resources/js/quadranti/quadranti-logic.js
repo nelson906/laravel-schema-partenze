@@ -432,6 +432,253 @@ export class QuadrantiLogic {
         return groups;
     }
 
+    /**
+     * ════════════════════════════════════════════════════════════════════════
+     * MOTORE UNICO — espandiSezione + renderQuadranti + costruisciQuadranti*
+     *
+     * Una sola implementazione di: ordine interno del terzetto, posizione del
+     * volo incompleto (twosome), ordine dei gruppi. Sostituisce le regole
+     * duplicate (buildSingleTeeSection, buildBlock, arco) — vedi
+     * MODELLO_QUADRANTI.md. bilanciaQuadranti / limitiQuadranti NON si toccano:
+     * restano la fonte dei range.
+     * ════════════════════════════════════════════════════════════════════════
+     */
+
+    /**
+     * CORE del motore. Espande l'intervallo di ranghi [lo..hi] in righe (gruppi
+     * da `mod`). Regole universali (dai PDF ufficiali in Schemi partenze/):
+     *   - il volo incompleto (twosome) prende i ranghi più ALTI ed è messo in
+     *     TESTA alla sezione (primo volo) — regola `difference` MODELLO §3.1;
+     *   - `internal` = ordine dentro il gruppo: 'asc' → [70,71,72] (ordine di
+     *     merito/qualificazione), 'desc' → [72,71,70] (ordine di classifica);
+     *   - `groupOrder` = ordine dei gruppi: 'desc' parte dai ranghi alti.
+     *
+     * @returns {Array<number[]>} righe di RANGHI (1-based), nell'ordine di partenza
+     */
+    espandiSezione(lo, hi, mod, internal = 'asc', groupOrder = 'desc') {
+        const count = hi - lo + 1;
+        if (count <= 0) return [];
+        const inc  = mod - 1;
+        const diff = Math.ceil(count / mod) * mod - count; // 0,1,2 voli corti
+
+        // Ranghi nell'ordine di GIOCO (ordine dei gruppi):
+        //   'asc'  → dal più basso al più alto;  'desc' → dal più alto al più basso.
+        const seq = [];
+        if (groupOrder === 'asc') { for (let r = lo; r <= hi; r++) seq.push(r); }
+        else { for (let r = hi; r >= lo; r--) seq.push(r); }
+
+        // I voli CORTI (twosome) sono i PRIMI `diff` voli → SEMPRE in TESTA al
+        // blocco (regola: twosome in testa). Poi i voli pieni. I ranghi del
+        // twosome dipendono dall'ordine: 'asc' → i più bassi; 'desc' → i più alti.
+        const rows = [];
+        let i = 0;
+        for (let d = 0; d < diff; d++) { rows.push(seq.slice(i, i + inc)); i += inc; }
+        for (; i < seq.length; i += mod) rows.push(seq.slice(i, i + mod));
+
+        // Ordine INTERNO del terzetto: crescente (merito) o decrescente (classifica).
+        return rows.map((g) => { const s = [...g].sort((a, b) => a - b); return internal === 'asc' ? s : s.reverse(); });
+    }
+
+    /** Nome (nominativo) o numero di rango per la cella giocatore. */
+    _playerOf(source, rank) {
+        return (source && source[rank - 1] !== undefined && source[rank - 1] !== '')
+            ? source[rank - 1]
+            : String(rank);
+    }
+
+    /**
+     * MOTORE. Espande una lista di Quadrante in gruppi pronti per il rendering.
+     * Un Quadrante = { categoria:'M'|'F', sessione:'early'|'late', tee:1|10,
+     *                  lo, hi, internal:'asc'|'desc', groupOrder:'asc'|'desc',
+     *                  source:Array }.
+     * I quadranti vuoti (lo>hi) sono saltati. L'ordine della lista è l'ordine
+     * di partenza (per il tee unico è anche l'ordine dei voli).
+     *
+     * @returns {Array} gruppi { players, playerIndices, category, tee, sessione }
+     */
+    renderQuadranti(quadranti, mod) {
+        const out = [];
+        quadranti.forEach((q) => {
+            const rows = this.espandiSezione(q.lo, q.hi, mod, q.internal, q.groupOrder);
+            rows.forEach((r) => {
+                out.push({
+                    players:       r.map((rank) => this._playerOf(q.source, rank)),
+                    playerIndices: r.map((rank) => rank - 1),
+                    category:      q.categoria,
+                    tee:           q.tee,
+                    sessione:      q.sessione,
+                });
+            });
+        });
+        return out;
+    }
+
+    /**
+     * Costruisce i Quadrante per il TEE UNICO di qualificazione (giri normali).
+     *
+     * Struttura (schema B / 2° giro, highLeads): uomini-alti → donne → uomini-bassi
+     * (donne in mezzo, vedi TEE UNICO.pdf). 1° giro standard (lowLeads): l'ordine
+     * è invertito. Il confine low/high (`limit2`) è spostato da computeSplit così
+     * che la sezione che APRE assorba il twosome dai ranghi più alti.
+     * Ordine interno SEMPRE crescente (qualificazione = ordine di merito).
+     */
+    costruisciQuadrantiSingleTee(round, garaNT, players, proette, mod, atleti, atlete) {
+        const isSchemaB = (
+            garaNT === COMPETITION_TYPES.GARA_GIOVANILE ||
+            garaNT === COMPETITION_TYPES.TEODORO_SOLDATI
+        );
+        const highLeads = isSchemaB || round !== ROUND_TYPES.FIRST;
+
+        // Sposta il confine così che la sezione di apertura abbia esattamente
+        // `diff` voli corti (twosome ai ranghi più alti della sezione).
+        const computeSplit = (total, natLimit2, diff) => {
+            if (!highLeads || diff === 0) return natLimit2;
+            const highCount     = total - natLimit2;
+            const currHighRem   = highCount % mod;
+            const targetHighRem = (diff * (mod - 1)) % mod;
+            const adj = ((currHighRem - targetHighRem) % mod + mod) % mod;
+            return natLimit2 + adj;
+        };
+
+        const mLim   = this.limitiQuadranti(players, mod);
+        const mSplit = computeSplit(players, mLim.limit2, mLim.difference);
+        const fLim   = proette > 0 ? this.limitiQuadranti(proette, mod) : { limit2: 0, difference: 0 };
+        const fSplit = proette > 0 ? computeSplit(proette, fLim.limit2, fLim.difference) : 0;
+
+        const mk = (categoria, lo, hi, source, sessione) => ({
+            categoria, sessione, tee: 1, lo, hi,
+            internal: 'asc', groupOrder: 'desc', source,
+        });
+
+        const mLow  = mk('M', 1,          mSplit,  atleti, 'late');
+        const mHigh = mk('M', mSplit + 1, players, atleti, 'early');
+        const fLow  = mk('F', 1,          fSplit,  atlete, 'late');
+        const fHigh = mk('F', fSplit + 1, proette, atlete, 'early');
+
+        return highLeads
+            ? [mHigh, fHigh, fLow, mLow]   // uomini alti → donne → uomini bassi
+            : [mLow, fLow, fHigh, mHigh];  // 1° giro standard: invertito
+    }
+
+    /**
+     * MOTORE — costruisce i 4 quadranti a forma ∩ (U-rovesciata) per un campo di
+     * N giocatori, applicando la regola §3.1 (README §3.2/§3.3) UNA volta sola.
+     *
+     * Modello canonico (README §3):
+     *   Q1 → Tee1 Early (alto-sx)    Q2 → Tee10 Early
+     *   Q3 → Tee1 Late  (basso-sx)   Q4 → Tee10 Late
+     * I conteggi vengono da bilanciaQuadranti (NON toccato). La `difference`:
+     *   - d=1 → 1° volo di Q1 da (mod-1);  d=2 → primi due voli di Q1 da (mod-1);
+     *   - d=3 → ultimo volo di Q3 tagliato (riga vuota in basso-sx).
+     * Lo sbilancio Tee1/Tee10 (Q1+Q3 vs Q2+Q4) fa cadere il vuoto residuo in
+     * coda a Q3 = basso-sx, esattamente come il 54 buche.
+     *
+     * Geometria ∩: Tee1 = metà bassa, gruppi DECRESCENTI; Tee10 = metà alta,
+     * gruppi CRESCENTI. Ordine interno del terzetto = `internal` ('asc' per i
+     * giri di merito, 'desc' per i giri di classifica).
+     *
+     * @param {number} earlyFlights  voli totali in sessione Early (Tee1+Tee10).
+     *   È deciso dal chiamante (women-aware nei giri con donne); il resto va Late.
+     * @returns {{early:{tee1:[],tee10:[]}, late:{tee1:[],tee10:[]}}}
+     */
+    buildURQuadrants(N, mod, source, internal = 'asc', earlyFlights = null, opts = {}) {
+        const empty = { early: { tee1: [], tee10: [] }, late: { tee1: [], tee10: [] } };
+        if (!N || N <= 0) return empty;
+
+        // Parametri di FORMA (default = ∩ giovanili, comportamento storico):
+        //   forma 'UR' (∩): metà bassa gruppi DECRESCENTI, metà alta CRESCENTI.
+        //   forma 'U'  (∪): metà bassa CRESCENTI, metà alta DECRESCENTI.
+        //   forma 'S'      : entrambe CRESCENTI.
+        //   verso 'sn-dx' (L/R): metà bassa su Tee 1; 'dx-sn' (R/L): su Tee 10.
+        //   earlyIsHigh: true → Early prende i ranghi ALTI (giovanili); false → bassi (cerchio).
+        // forma può essere per-sessione: {early, late} (cerchio = early 'UR' + late 'U').
+        const { forma = 'UR', verso = 'sn-dx', earlyIsHigh = true } = opts;
+        const earlyForma = (forma && forma.early) || (typeof forma === 'string' ? forma : 'UR');
+        const lateForma  = (forma && forma.late)  || (typeof forma === 'string' ? forma : 'UR');
+        // Per una forma, ritorna ordine GRUPPI e INTERNO per Tee 1 / Tee 10.
+        const layoutOf = (f) => {
+            const lowG  = f === 'UR' ? 'desc' : 'asc';   // metà bassa
+            const highG = f === 'U'  ? 'desc' : 'asc';   // metà alta
+            const t1g  = verso === 'dx-sn' ? highG : lowG;   // Tee 1 = alta (dx-sn) o bassa
+            const t10g = verso === 'dx-sn' ? lowG  : highG;  // Tee 10 = bassa (dx-sn) o alta
+            return { t1g, t10g, t1i: t1g === 'desc' ? internal : 'asc', t10i: t10g === 'desc' ? internal : 'asc' };
+        };
+        const eLay = layoutOf(earlyForma), lLay = layoutOf(lateForma);
+
+        const F = Math.ceil(N / mod);
+        const d = F * mod - N;                       // 0,1,2 (mai 3 con questa def.)
+        let eF = earlyFlights == null ? Math.round(F / 2) : earlyFlights;
+        eF = Math.max(0, Math.min(F, eF));
+        if (eF % 2 !== 0) eF -= 1;                    // Early bilanciato → vuoto in Late Tee 1
+        eF = Math.max(0, eF);
+        const lF = F - eF;
+
+        // Conteggi per quadrante. Il twosome (difference) va in Q1 (Tee 1 Early) se
+        // c'è Early, altrimenti in Q3 (Tee 1 Late). Q1/Q3 = Tee 1 = SEMPRE la metà
+        // del proprio lato che apre quel tee (mappata su ranghi via verso più sotto).
+        const q1f = Math.floor(eF / 2), q2f = eF - q1f;   // Early: Q1 Tee1, Q2 Tee10
+        const q3f = Math.floor(lF / 2), q4f = lF - q3f;   // Late:  Q3 Tee1, Q4 Tee10
+        const earlyPlayers = eF > 0 ? Math.max(0, eF * mod - d) : 0;
+        const latePlayers  = N - earlyPlayers;
+        let q1p, q2p, q3p, q4p;
+        if (eF > 0) {
+            q1p = Math.max(0, q1f * mod - d); q2p = earlyPlayers - q1p;  // twosome in Q1
+            q3p = q3f * mod;                  q4p = latePlayers - q3p;
+        } else {
+            q1p = 0; q2p = 0;
+            q3p = Math.max(0, q3f * mod - d); q4p = latePlayers - q3p;   // twosome in Q3
+        }
+
+        // Assegnazione RANGHI ai quadranti.
+        //   earlyIsHigh: Early = ranghi alti. Ordine crescente dei ranghi:
+        //     Late(Q3 bassi, Q4) poi Early(Q1, Q2 alti).
+        //   !earlyIsHigh (cerchio): Early = ranghi bassi → Early(Q1,Q2) poi Late(Q3,Q4).
+        // Dentro una sessione, Tee 1 (Q1/Q3) prende la metà BASSA o ALTA secondo `verso`:
+        //   sn-dx → Tee 1 = metà bassa; dx-sn → Tee 1 = metà alta.
+        // Quindi l'ordine dei ranghi all'interno della sessione dipende da verso.
+        let lo = 1;
+        const rng = (n) => { const r = [lo, lo + n - 1]; lo += n; return r; };
+        // Costruisce le due fasce (Tee1/Tee10) di una sessione rispettando verso:
+        // ritorna { rTee1, rTee10 } come intervalli di rango già ordinati.
+        const sessRanges = (tee1Players, tee10Players) => {
+            // metà bassa = ranghi più bassi della sessione; metà alta = più alti.
+            // verso sn-dx: Tee1=bassa, Tee10=alta → assegno prima Tee1.
+            // verso dx-sn: Tee1=alta,  Tee10=bassa → assegno prima Tee10 (bassa).
+            if (verso === 'dx-sn') {
+                const rTee10 = rng(tee10Players); // bassa
+                const rTee1  = rng(tee1Players);  // alta
+                return { rTee1, rTee10 };
+            }
+            const rTee1  = rng(tee1Players);  // bassa
+            const rTee10 = rng(tee10Players); // alta
+            return { rTee1, rTee10 };
+        };
+
+        let rQ3, rQ4, rQ1, rQ2;
+        if (earlyIsHigh) {
+            // ranghi crescenti: Late prima (bassi), Early dopo (alti).
+            ({ rTee1: rQ3, rTee10: rQ4 } = sessRanges(q3p, q4p));
+            ({ rTee1: rQ1, rTee10: rQ2 } = sessRanges(q1p, q2p));
+        } else {
+            // cerchio: Early prima (bassi), Late dopo (alti).
+            ({ rTee1: rQ1, rTee10: rQ2 } = sessRanges(q1p, q2p));
+            ({ rTee1: rQ3, rTee10: rQ4 } = sessRanges(q3p, q4p));
+        }
+
+        const grp = ([a, b], groupOrder, internalOrder) => {
+            if (b < a) return [];
+            return this.espandiSezione(a, b, mod, internalOrder, groupOrder).map((r) => ({
+                players:       r.map((rank) => this._playerOf(source, rank)),
+                playerIndices: r.map((rank) => rank - 1),
+            }));
+        };
+
+        return {
+            early: { tee1: grp(rQ1, eLay.t1g, eLay.t1i), tee10: grp(rQ2, eLay.t10g, eLay.t10i) }, // Q1 alto-sx, Q2
+            late:  { tee1: grp(rQ3, lLay.t1g, lLay.t1i), tee10: grp(rQ4, lLay.t10g, lLay.t10i) }, // Q3 basso-sx, Q4
+        };
+    }
+
   /**
    * Numerazione flight UNIFICATA — una sola regola per ogni gara.
    *
@@ -454,6 +701,84 @@ export class QuadrantiLogic {
       cb.forEach((b) => b.tee1.forEach((g) => { g.flightNumber = n++; }));
       cb.forEach((b) => b.tee10.forEach((g) => { g.flightNumber = n++; }));
     });
+  }
+
+  /**
+   * RENDERER UNICO a blocchi (doppio tee). Riceve i blocchi GIÀ costruiti
+   * (`{cat, session, tee1[], tee10[]}`), assegna i flightNumber (regola unica),
+   * impagina la tabella, calcola gli orari (stacco incrocio Early→Late = mezzo
+   * giro; stacco breve tra blocchi della stessa sessione) e popola la striscia
+   * FIG. È il punto di rendering condiviso da tutti i formati a blocchi.
+   *
+   * @param {Array} costruiti  blocchi con tee1/tee10 già pronti
+   * @param {boolean} reversedTriplet  se true la riga vuota separa solo Early/Late
+   * @returns {string} HTML (info box + tabella)
+   */
+  renderBlocchi(costruiti, blankAtCrossingOnly = false) {
+    const colors = TABLE_COLORS.teeColors;
+    const gap = this.config.gap;
+    this.assegnaFlightUnificato(costruiti);
+
+    this.figQuadranti = [];
+    let bodyHtml = this.generateTableHeader(true);
+    let blockTime = this.config.startTime;
+    let lastEarlyTime = '', firstLateTime = '', lastDeparture = this.config.startTime;
+
+    costruiti.forEach((b, bi) => {
+      const { tee1, tee10 } = b;
+      const colore = b.cat === 'F' ? TABLE_COLORS.women : TABLE_COLORS.men;
+      const lbg = b.cat === 'F' ? 'transparent' : colors.orange;
+      const rbg = b.cat === 'F' ? 'transparent' : colors.lightGreen;
+      if (bi > 0) {
+        const sessionChange = costruiti[bi - 1].session !== b.session;
+        const addBlank = blankAtCrossingOnly ? sessionChange : true;
+        if (addBlank) bodyHtml += '<tr><td colspan="20" class="py-2">&nbsp;</td></tr>';
+      }
+      const firstDep = blockTime;
+      bodyHtml += this.buildGroupTableRows(tee1, tee10, colore, lbg, rbg, blockTime, gap, b.cat, 1);
+      const catLabel = b.cat === 'F' ? 'Donne' : 'Uomini';
+      this.pushFigQuadrante(catLabel, `Blocco ${bi + 1} · Tee 1`, tee1);
+      this.pushFigQuadrante(catLabel, `Blocco ${bi + 1} · Tee 10`, tee10);
+      const rows = Math.max(tee1.length, tee10.length);
+      // Ultima partenza del blocco = firstDep + (rows-1) stacchi.
+      let blockLastDep = blockTime;
+      for (let i = 0; i < rows - 1; i++) blockLastDep = addTime(blockLastDep, gap);
+      if (rows > 0) {
+        if (b.session === 'early') lastEarlyTime = blockLastDep;
+        if (b.session === 'late' && !firstLateTime) firstLateTime = firstDep;
+        lastDeparture = blockLastDep;
+      }
+      for (let i = 0; i < rows; i++) blockTime = addTime(blockTime, gap);
+      const next = costruiti[bi + 1];
+      if (next) {
+        const crossing = b.session === 'early' && next.session === 'late';
+        blockTime = addTime(blockTime, crossing ? halfTime(this.config.round) : '00:10');
+      }
+    });
+    bodyHtml += '</tbody>';
+
+    // Info box a 3 campi (doppio tee): Ultima Early, Prima Late, Fine Gara.
+    if (!lastEarlyTime) lastEarlyTime = this.config.startTime;
+    if (!firstLateTime) firstLateTime = lastEarlyTime;
+    const finishTime = addTime(lastDeparture, this.config.round);
+    const infoHTML = `
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 20px; padding: 15px; background: #e8f5e8; border-radius: 8px;">
+        <div style="text-align: center; padding: 10px; background: white; border-radius: 4px;">
+          <strong style="display: block; font-size: 18px; color: #2c5530;">${lastEarlyTime}</strong>
+          <span>Ultima Partenza Early</span>
+        </div>
+        <div style="text-align: center; padding: 10px; background: white; border-radius: 4px;">
+          <strong style="display: block; font-size: 18px; color: #2c5530;">${firstLateTime}</strong>
+          <span>Prima Partenza Late</span>
+        </div>
+        <div style="text-align: center; padding: 10px; background: white; border-radius: 4px;">
+          <strong style="display: block; font-size: 18px; color: #2c5530;">${finishTime}</strong>
+          <span>Fine Gara Stimata</span>
+        </div>
+      </div>
+    `;
+    this.figFlights = this._figFlightsBuffer;
+    return infoHTML + `<table>${bodyHtml}</table>`;
   }
 
   /**
@@ -496,6 +821,10 @@ export class QuadrantiLogic {
     // Giri a sessioni miste (Prova di gioco): metà campo per ranghi a sessione,
     // forma per-sessione anche 'S' (entrambi i tee nella stessa direzione).
     const isSessioniMiste = !!(roundDesc && roundDesc.earlyHalf && sezEarly && sezLate);
+    // Cerchio/clessidra (54/72 1°-2°, patrocinate/trofei 1°): forma mista (∩+∪).
+    // Ora passa dal MOTORE UNICO (buildURQuadrants + renderBlocchi), non più dal
+    // vecchio generate54/36HoleTableNew.
+    const isCerchio = !!(roundDesc && roundDesc.layout === 'cerchio');
 
     // Reset buffer Vista FIG: buildGroupTableRows lo riempie durante il render.
     this._figFlightsBuffer = [];
@@ -514,49 +843,28 @@ export class QuadrantiLogic {
         : (parseInt(this.config.proetteCut) || proette);
       const colors = TABLE_COLORS.teeColors;
 
-      // Helper closures locali a generateDoubleTee (NON nuovi metodi del modulo)
-      // Costruisce gruppi in ordine DECRESCENTE (worst first, leader last) — Tee 1
-      const descGroups = (arr, cat) => {
-        const groups = [];
-        for (let i = arr.length - 1; i >= 0; i -= mod) {
-          const g = [];
-          for (let j = 0; j < mod && (i - j) >= 0; j++) g.push(arr[i - j]);
-          // g.length può essere < mod (gruppo incompleto), va comunque pushed
-          // ma per il display rank alto a sinistra è già [27,26,25].
-          groups.push({ players: g, category: cat, quadrant: 'Q1', type: 'Early' });
-        }
-        return groups;
+      // Finale per classifica, doppio tee — via MOTORE UNICO (renderQuadranti).
+      // Tee 1 (Q1, front) DECRESCENTE; Tee 10 (back) a gruppi CRESCENTI, interno
+      // decrescente (PDF "3°/4° giro per classifica"). Il resto (difference §3.1)
+      // va al Tee 1 (Q1): mai un giocatore solo — d voli da (mod-1).
+      const buildFinaleTees = (nPlayers, cat) => {
+        if (nPlayers <= 0) return { tee1: [], tee10: [] };
+        const totalFlights = Math.ceil(nPlayers / mod);
+        const frontFlights = Math.ceil(totalFlights / 2);
+        const backCount = Math.min((totalFlights - frontFlights) * mod, nPlayers);
+        const frontCount = nPlayers - backCount; // Q1 (Tee 1) assorbe il resto
+        const tee1 = this.renderQuadranti(
+          [{ categoria: cat, tee: 1, lo: 1, hi: frontCount, internal: 'desc', groupOrder: 'desc', source: null }], mod);
+        const tee10 = this.renderQuadranti(
+          [{ categoria: cat, tee: 10, lo: frontCount + 1, hi: nPlayers, internal: 'desc', groupOrder: 'asc', source: null }], mod);
+        return { tee1, tee10 };
       };
-      // Costruisce gruppi in ordine CRESCENTE (best of back first, worst last) — Tee 10
-      // Display intra-gruppo: rank alto a sinistra (gruppo 28-30 mostrato "30 29 28").
-      const ascGroups = (arr, cat) => {
-        const groups = [];
-        for (let i = 0; i < arr.length; i += mod) {
-          const slice = arr.slice(i, Math.min(i + mod, arr.length));
-          groups.push({ players: slice.slice().reverse(), category: cat, quadrant: 'Q2', type: 'Early' });
-        }
-        return groups;
-      };
-
-      // Split per FLIGHT count (ceil sul front), come da immagine
-      const rankM = range(1, playersFinal);
-      const totalFlightsM = Math.ceil(playersFinal / mod);
-      const frontFlightsM = Math.ceil(totalFlightsM / 2);
-      const frontCountM = Math.min(frontFlightsM * mod, playersFinal);
-      const frontMen = rankM.slice(0, frontCountM);
-      const backMen = rankM.slice(frontCountM);
-
-      const rankF = range(1, proetteFinal);
-      const totalFlightsF = Math.ceil(proetteFinal / mod);
-      const frontFlightsF = Math.ceil(totalFlightsF / 2);
-      const frontCountF = Math.min(frontFlightsF * mod, proetteFinal);
-      const frontWomen = rankF.slice(0, frontCountF);
-      const backWomen = rankF.slice(frontCountF);
-
-      const maleTee1  = descGroups(frontMen, 'M');
-      const maleTee10 = ascGroups(backMen, 'M');
-      const femTee1   = proetteFinal > 0 ? descGroups(frontWomen, 'F') : [];
-      const femTee10  = proetteFinal > 0 ? ascGroups(backWomen, 'F')  : [];
+      const mTees = buildFinaleTees(playersFinal, 'M');
+      const fTees = proetteFinal > 0 ? buildFinaleTees(proetteFinal, 'F') : { tee1: [], tee10: [] };
+      const maleTee1  = mTees.tee1;
+      const maleTee10 = mTees.tee10;
+      const femTee1   = fTees.tee1;
+      const femTee10  = fTees.tee10;
 
       // Numerazione flight UNIFICATA — stessa regola di ogni gara: per
       // categoria, prima tutto il Tee 1, poi tutto il Tee 10 (contatori
@@ -651,46 +959,13 @@ export class QuadrantiLogic {
     //   'sessioni-miste'      → 2 blocchi (solo uomini): earlyHalf/lateHalf ruotano tra giri
     // Aggiungere un nuovo tipo = nuova voce in blocchiBuilders + layout:'nome' in config.js.
     // Numerico o nominativo secondo config. I giri 'finale' sono già intercettati da isFinaleRound.
-    if (isBloccoUR || isSessioniMiste) {
+    if (isBloccoUR || isSessioniMiste || isCerchio) {
       const reversedTriplet = roundDesc ? !!roundDesc.reversed : false;
       const colors = TABLE_COLORS.teeColors;
       const gap = this.config.gap;
 
-      // chunk: spezza un array in terzetti da `mod`.
-      const chunk = (a) => {
-        const out = [];
-        for (let i = 0; i < a.length; i += mod) out.push(a.slice(i, i + mod));
-        return out;
-      };
-      // arco: costruisce un blocco a doppio tee secondo la FORMA (notazione
-      // stringa in config.js). L'intervallo è spezzato a metà per flight; la
-      // direzione delle righe di ciascuna metà dipende dalla forma:
-      //   'UR' (∩): metà bassa righe DECRESCENTI, metà alta CRESCENTI
-      //   'U'  (∪): metà bassa righe CRESCENTI,  metà alta DECRESCENTI
-      //   'S'     : entrambe le metà righe CRESCENTI (stessa direzione)
-      // Il `verso` decide su quale tee va la metà bassa (= inizio percorso):
-      //   'sn-dx' (L/R) → metà bassa su Tee 1; 'dx-sn' (R/L) → su Tee 10.
-      // La numerazione flight NON si fa qui: la assegna assegnaFlightUnificato
-      // su TUTTI i blocchi insieme (regola unica: Tee 1 continuo, poi Tee 10).
-      const arco = (arr, forma, verso) => {
-        const totFlights = Math.ceil(arr.length / mod);
-        const cut = Math.floor(totFlights / 2) * mod;
-        const bassaTri = forma === 'UR'
-          ? chunk(arr.slice(0, cut)).reverse()
-          : chunk(arr.slice(0, cut));
-        const altaTri = forma === 'U'
-          ? chunk(arr.slice(cut)).reverse()
-          : chunk(arr.slice(cut));
-        const mk = (t) => ({ players: reversedTriplet ? t.slice().reverse() : t.slice() });
-        return verso === 'dx-sn'
-          ? { tee1: altaTri.map(mk),  tee10: bassaTri.map(mk) }
-          : { tee1: bassaTri.map(mk), tee10: altaTri.map(mk) };
-      };
-
       // Dati giocatori: nomi (nominativo='On') o numeri di rango (nominativo='Off').
       const { atleti: menRanks, atlete: womenRanks } = this.getPlayerArrays();
-      // forma+verso di una sezione, decodificati dalla stringa del descrittore.
-      const sezOf = (sess) => (sess === 'early' ? sezEarly : sezLate);
 
       // Determina il layout: campo esplicito in config.js (preferito) o
       // derivazione automatica dai flag (retrocompatibilità con giri senza `layout`).
@@ -709,40 +984,61 @@ export class QuadrantiLogic {
         // per ranghi. earlyHalf dice quale metà gioca Early (ruota tra giri).
         // Ogni sessione è un blocco con la propria forma ('UR' o 'S').
         'sessioni-miste': () => {
+          // MOTORE UNICO: Prova di gioco 1°/2° (solo uomini). Campo diviso in due
+          // metà al confine `limit2`; `earlyHalf` dice quale gioca Early. Forma
+          // per-sessione dal descrittore (es. early 'UR' + late 'S'). Niente arco.
           const limit2 = players > 0 ? this.limitiQuadranti(players, mod).limit2 : 0;
-          const metaBassa = menRanks.slice(0, limit2);
-          const metaAlta  = menRanks.slice(limit2);
-          const earlyArr = roundDesc.earlyHalf === 'alta' ? metaAlta : metaBassa;
-          const lateArr  = roundDesc.earlyHalf === 'alta' ? metaBassa : metaAlta;
+          const earlyIsHigh = roundDesc.earlyHalf === 'alta';
+          const earlyPlayers = earlyIsHigh ? (players - limit2) : limit2;
+          const earlyFl = Math.ceil(earlyPlayers / mod);
+          const forma = { early: sezEarly.forma, late: sezLate.forma };
+          const verso = sezEarly.verso;
+          const men = this.buildURQuadrants(players, mod, menRanks, 'asc', earlyFl, { forma, verso, earlyIsHigh });
           const bl = [];
-          if (earlyArr.length > 0) bl.push({ cat: 'M', arr: earlyArr, session: 'early', ...sezOf('early') });
-          if (lateArr.length > 0)  bl.push({ cat: 'M', arr: lateArr,  session: 'late',  ...sezOf('late') });
+          if (men.early.tee1.length || men.early.tee10.length)
+            bl.push({ cat: 'M', session: 'early', tee1: men.early.tee1, tee10: men.early.tee10 });
+          if (men.late.tee1.length || men.late.tee10.length)
+            bl.push({ cat: 'M', session: 'late', tee1: men.late.tee1, tee10: men.late.tee10 });
           return bl;
         },
 
         // Patrocinate/Trofei 2° giro: 4 blocchi ∩ reversed, donne IN MEZZO.
         // Ordine: uomini metà alta → donne metà alta → donne metà bassa → uomini metà bassa.
-        // Le donne compensano lo sbilancio uomini (Early ≈ Late):
-        //   womenEarlyFlights = (menLowerFlights − menUpperFlights + womenTot) / 2
+        // È il MIRROR del 1° giro (cerchio): vedi sotto.
         'reversed-interleaved': () => {
-          const menLimit = players > 0 ? this.limitiQuadranti(players, mod).limit2 : 0;
-          const menUpper = menRanks.slice(menLimit);    // metà alta uomini → Early
-          const menLower = menRanks.slice(0, menLimit); // metà bassa uomini → Late
-          const menUpperFlights = Math.ceil(menUpper.length / mod);
-          const menLowerFlights = Math.ceil(menLower.length / mod);
+          // MOTORE UNICO — 2° giro = MIRROR esatto del 1° (cerchio).
+          // Si calcola lo split BILANCIATO del 1° giro (IDENTICO al builder
+          // 'cerchio': uomini late-heavy, donne early-heavy, Early ≈ Late) e si
+          // SCAMBIA Early↔Late per entrambi. Così UOMINI E DONNE seguono la
+          // STESSA logica e il bilanciamento è preservato (lo swap di un
+          // bilanciato resta bilanciato). Es. 90/42: 1° = uomini 7E/8L + donne
+          // 4E/3L (11/11) ⇒ 2° = uomini 8E/7L + donne 3E/4L (11/11).
+          const menFlights = Math.ceil(players / mod);
           const womenTotFlights = Math.ceil(proette / mod);
-          let womenEarlyFlights = Math.round(
-            (menLowerFlights - menUpperFlights + womenTotFlights) / 2
-          );
-          womenEarlyFlights = Math.max(0, Math.min(womenTotFlights, womenEarlyFlights));
-          const womenLateCount = Math.min((womenTotFlights - womenEarlyFlights) * mod, proette);
-          const womenUpper = womenRanks.slice(womenLateCount);    // metà alta donne → Early
-          const womenLower = womenRanks.slice(0, womenLateCount); // metà bassa donne → Late
+          // --- split del 1° giro (stessa formula del builder 'cerchio') ---
+          const target = Math.ceil(((menFlights + womenTotFlights) / 2) / 2);
+          const wEarly1 = proette > 0
+            ? (() => { const wq = this.bilanciaQuadranti(proette, mod); return wq.Q1 + wq.Q2; })()
+            : 0;
+          const maleMaxEarly = Math.max(0, target - Math.ceil(wEarly1 / 2));
+          const mq = this.bilanciaQuadranti(players, mod, maleMaxEarly);
+          const mEarly1 = mq.Q1 + mq.Q2;
+          // --- 2° giro = MIRROR: scambio Early↔Late ---
+          const menUpperFlights   = menFlights - mEarly1;        // uomini early-heavy
+          const womenEarlyFlights = womenTotFlights - wEarly1;    // donne late-heavy
+          const men = this.buildURQuadrants(players, mod, menRanks, 'desc', menUpperFlights);
+          const women = proette > 0
+            ? this.buildURQuadrants(proette, mod, womenRanks, 'desc', womenEarlyFlights)
+            : null;
           const bl = [];
-          if (menUpper.length > 0)   bl.push({ cat: 'M', arr: menUpper,   session: 'early', ...sezOf('early') });
-          if (womenUpper.length > 0) bl.push({ cat: 'F', arr: womenUpper, session: 'early', ...sezOf('early') });
-          if (womenLower.length > 0) bl.push({ cat: 'F', arr: womenLower, session: 'late',  ...sezOf('late') });
-          if (menLower.length > 0)   bl.push({ cat: 'M', arr: menLower,   session: 'late',  ...sezOf('late') });
+          if (men.early.tee1.length || men.early.tee10.length)
+            bl.push({ cat: 'M', session: 'early', tee1: men.early.tee1, tee10: men.early.tee10 });
+          if (women && (women.early.tee1.length || women.early.tee10.length))
+            bl.push({ cat: 'F', session: 'early', tee1: women.early.tee1, tee10: women.early.tee10 });
+          if (women && (women.late.tee1.length || women.late.tee10.length))
+            bl.push({ cat: 'F', session: 'late', tee1: women.late.tee1, tee10: women.late.tee10 });
+          if (men.late.tee1.length || men.late.tee10.length)
+            bl.push({ cat: 'M', session: 'late', tee1: men.late.tee1, tee10: men.late.tee10 });
           return bl;
         },
 
@@ -755,13 +1051,71 @@ export class QuadrantiLogic {
           let earlyMenFlights = Math.round((menFlights + womenFlights) / 2);
           if (earlyMenFlights % 2 !== 0) earlyMenFlights -= 1; // a pari → Tee1 = Tee10
           earlyMenFlights = Math.max(0, Math.min(menFlights, earlyMenFlights));
-          const earlyCount = Math.min(earlyMenFlights * mod, menRanks.length);
-          const menEarly = menRanks.slice(menRanks.length - earlyCount); // ranghi alti
-          const menLate  = menRanks.slice(0, menRanks.length - earlyCount); // ranghi bassi
+          // MOTORE UNICO: i quadranti uomini via buildURQuadrants (§3.1: twosome
+          // in Q1 alto-sx, vuoto in Q3 basso-sx, tee bilanciati). Niente più arco.
+          // earlyMenFlights (women-aware, pari) decide lo split Early/Late.
+          const internal = reversedTriplet ? 'desc' : 'asc';
+          const men = this.buildURQuadrants(players, mod, menRanks, internal, earlyMenFlights);
+          // Donne TUTTE in Late (giovanili): motore unico con earlyFlights=0 →
+          // la difference va in Q3 (testa Late Tee 1), vuoto in coda, bilanciato.
+          const women = proette > 0
+            ? this.buildURQuadrants(proette, mod, womenRanks, internal, 0)
+            : null;
           const bl = [];
-          if (menEarly.length > 0) bl.push({ cat: 'M', arr: menEarly,   session: 'early', ...sezOf('early') });
-          if (proette > 0)         bl.push({ cat: 'F', arr: womenRanks, session: 'late',  ...sezOf('late') });
-          if (menLate.length > 0)  bl.push({ cat: 'M', arr: menLate,    session: 'late',  ...sezOf('late') });
+          if (men.early.tee1.length || men.early.tee10.length)
+            bl.push({ cat: 'M', session: 'early', tee1: men.early.tee1, tee10: men.early.tee10 });
+          if (women && (women.late.tee1.length || women.late.tee10.length))
+            bl.push({ cat: 'F', session: 'late', tee1: women.late.tee1, tee10: women.late.tee10 });
+          if (men.late.tee1.length || men.late.tee10.length)
+            bl.push({ cat: 'M', session: 'late', tee1: men.late.tee1, tee10: men.late.tee10 });
+          return bl;
+        },
+
+        // Cerchio (1° giro) / clessidra (2° giro) di 54/72 e patrocinate/trofei 1°.
+        // Forma MISTA dal descrittore: early ∩ + late ∪ (cerchio) oppure early ∪ +
+        // late ∩ (clessidra). earlyIsHigh derivato: clessidra (early 'U') = Early
+        // ranghi ALTI; cerchio (early 'UR') = Early ranghi bassi. Split uomini
+        // women-aware (come il vecchio flusso); blocchi: M-early, F-early, F-late,
+        // M-late. Sostituisce generate54/36HoleTableNew.
+        'cerchio': () => {
+          // 1° giro = cerchio (Early = ranghi BASSI, forma ∩ early + ∪ late).
+          const forma = { early: sezEarly.forma, late: sezLate.forma };
+          const verso = sezEarly.verso;
+          const earlyIsHigh = false;
+          // Split women-aware: le donne prendono i loro slot Early naturali, gli
+          // uomini riempiono il resto della mattina (vincolo maxEarlySlots).
+          const mf = Math.ceil(players / mod), wf = Math.ceil(proette / mod);
+          const target = Math.ceil(((mf + wf) / 2) / 2);
+          const wEarlyFl = proette > 0
+            ? (() => { const wq = this.bilanciaQuadranti(proette, mod); return wq.Q1 + wq.Q2; })()
+            : 0;
+          const maleMaxEarly = Math.max(0, target - Math.ceil(wEarlyFl / 2));
+          const mq = this.bilanciaQuadranti(players, mod, maleMaxEarly);
+          const mEarlyFl = mq.Q1 + mq.Q2;
+
+          const men1 = this.buildURQuadrants(players, mod, menRanks, 'asc', mEarlyFl, { forma, verso, earlyIsHigh });
+          const women1 = proette > 0
+            ? this.buildURQuadrants(proette, mod, womenRanks, 'asc', wEarlyFl, { forma, verso, earlyIsHigh })
+            : null;
+          // 2° giro = SPECULARE (giorno 2): i blocchi del 1° restano CONGELATI e
+          // scambiano posizione Early↔Late e Tee1↔Tee10 (remap Q1↔Q4, Q2↔Q3).
+          // Il twosome (1° in testa Early-Tee1) finisce in Late-Tee10.
+          const remap = (q) => ({
+            early: { tee1: q.late.tee10,  tee10: q.late.tee1 },
+            late:  { tee1: q.early.tee10, tee10: q.early.tee1 },
+          });
+          const giorno2 = roundDesc.giorno === 2;
+          const men = giorno2 ? remap(men1) : men1;
+          const women = women1 ? (giorno2 ? remap(women1) : women1) : null;
+          const bl = [];
+          if (men.early.tee1.length || men.early.tee10.length)
+            bl.push({ cat: 'M', session: 'early', tee1: men.early.tee1, tee10: men.early.tee10 });
+          if (women && (women.early.tee1.length || women.early.tee10.length))
+            bl.push({ cat: 'F', session: 'early', tee1: women.early.tee1, tee10: women.early.tee10 });
+          if (women && (women.late.tee1.length || women.late.tee10.length))
+            bl.push({ cat: 'F', session: 'late', tee1: women.late.tee1, tee10: women.late.tee10 });
+          if (men.late.tee1.length || men.late.tee10.length)
+            bl.push({ cat: 'M', session: 'late', tee1: men.late.tee1, tee10: men.late.tee10 });
           return bl;
         }
 
@@ -771,691 +1125,19 @@ export class QuadrantiLogic {
       if (!builder) throw new Error(`Layout sconosciuto: "${layout}". Aggiungere una voce in blocchiBuilders.`);
       const blocchi = builder();
 
-      // Costruisce i gruppi Tee 1 / Tee 10 di ogni blocco, POI numera i flight
-      // con la regola unificata (Tee 1 continuo Early→Late, poi Tee 10), uguale
-      // per ogni gara: la numerazione non dipende più dal singolo formato.
-      const costruiti = blocchi.map((b) => ({ ...b, ...arco(b.arr, b.forma, b.verso) }));
-      this.assegnaFlightUnificato(costruiti);
-
-      this.figQuadranti = [];
-      let bodyHtml = this.generateTableHeader(true);
-      let blockTime = this.config.startTime;
-
-      costruiti.forEach((b, bi) => {
-        const { tee1, tee10 } = b;
-        const colore = b.cat === 'F' ? TABLE_COLORS.women : TABLE_COLORS.men;
-        const lbg = b.cat === 'F' ? 'transparent' : colors.orange;
-        const rbg = b.cat === 'F' ? 'transparent' : colors.lightGreen;
-        // Riga vuota tra blocchi. Nel 2° giro "per classifica" (reversed) la
-        // riga separa SOLO Early da Late: uomini e donne della stessa sessione
-        // restano contigui (simmetria). Negli altri giri (giovanili) la riga
-        // vuota resta tra tutti i blocchi.
-        if (bi > 0) {
-          const sessionChange = costruiti[bi - 1].session !== b.session;
-          const addBlank = reversedTriplet ? sessionChange : true;
-          if (addBlank) bodyHtml += '<tr><td colspan="20" class="py-2">&nbsp;</td></tr>';
-        }
-        bodyHtml += this.buildGroupTableRows(
-          tee1, tee10, colore, lbg, rbg, blockTime, gap, b.cat, 1
-        );
-        // Striscia FIG: un'entrata per tee del blocco.
-        const catLabel = b.cat === 'F' ? 'Donne' : 'Uomini';
-        this.pushFigQuadrante(catLabel, `Blocco ${bi + 1} · Tee 1`, tee1);
-        this.pushFigQuadrante(catLabel, `Blocco ${bi + 1} · Tee 10`, tee10);
-        // Avanza il tempo: righe del blocco.
-        const rows = Math.max(tee1.length, tee10.length);
-        for (let i = 0; i < rows; i++) blockTime = addTime(blockTime, gap);
-        // Stacco prima del blocco successivo: nel passaggio Early → Late serve
-        // il tempo di attraversamento (mezzo giro), come nei giri 54/72; tra
-        // blocchi della stessa sessione basta uno stacco breve.
-        const next = costruiti[bi + 1];
-        if (next) {
-          const crossing = b.session === 'early' && next.session === 'late';
-          blockTime = addTime(
-            blockTime,
-            crossing ? halfTime(this.config.round) : '00:10'
-          );
-        }
-      });
-      bodyHtml += '</tbody>';
-
-      const infoHTML = `
-      <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 20px; padding: 15px; background: #e8f5e8; border-radius: 8px;">
-        <div style="text-align: center; padding: 10px; background: white; border-radius: 4px;">
-          <strong style="display: block; font-size: 18px; color: #2c5530;">${this.config.startTime}</strong>
-          <span>Prima Partenza</span>
-        </div>
-        <div style="text-align: center; padding: 10px; background: white; border-radius: 4px;">
-          <strong style="display: block; font-size: 18px; color: #2c5530;">${blockTime}</strong>
-          <span>Fine Gara Stimata</span>
-        </div>
-      </div>
-    `;
-      this.figFlights = this._figFlightsBuffer;
-      return infoHTML + `<table>${bodyHtml}</table>`;
+      // Tutti i builder producono già blocchi { tee1, tee10 } (motore unico):
+      // niente più espansione `arco`. Numerazione+impaginazione+orari+FIG: renderBlocchi.
+      // Riga vuota solo all'incrocio Early→Late per reversed (classifica) e cerchio.
+      return this.renderBlocchi(blocchi, reversedTriplet || isCerchio);
     }
 
-    const { atleti, atlete } = this.getPlayerArrays();
-    const dayNumber = round === ROUND_TYPES.SECOND ? 2 : 1;
-
-    // Calcola le donne prima (distribuzione naturale, senza vincoli)
-    const femaleGroups = (proette > 0) ? this.generatePlayerGroups(proette, mod, atlete, 'F') : [];
-
-    // Ricava quanti orari Early occupano le donne (ogni coppia Tee1+Tee10 = 1 orario)
-    const femaleEarlySlots = Math.ceil(femaleGroups.filter(g => g.type === 'Early').length / 2);
-
-    // Constraint bilanciamento: Early ≈ Late (differenza max 1 orario)
-    // Il giorno 1 assegna l'orario in più a Early; il giorno 2 (remap) lo avrà in Late.
-    const totalFlights = Math.ceil(players / mod) + Math.ceil(proette / mod);
-    const totalOrari   = totalFlights / 2;
-    const targetEarlySlots  = Math.ceil(totalOrari / 2);   // ceil: il "±1" va a Early il giorno 1
-    const maleMaxEarlySlots = Math.max(0, targetEarlySlots - femaleEarlySlots);
-
-    // Calcola gli uomini applicando il constraint
-    const maleGroups = (players > 0) ? this.generatePlayerGroups(players, mod, atleti, 'M', maleMaxEarlySlots) : [];
-
-        // Assegna il flightNumber a ogni gruppo: prima TUTTI i flight di Tee 1
-        // (quadranti 1 e 3 in sequenza), poi TUTTI quelli di Tee 10 (2 e 4).
-        // Il giorno 2 ruota i quadranti, quindi Tee 1 = Q4+Q2, Tee 10 = Q3+Q1.
-        // Numerazione separata per uomini e donne.
-        const assignFlightNumbers = (groups) => {
-            const byQ = (q) => groups.filter(g => g.quadrant === q);
-            const tee1  = dayNumber === 1
-                ? [...byQ('Q1'), ...byQ('Q3')]
-                : [...byQ('Q4'), ...byQ('Q2')];
-            const tee10 = dayNumber === 1
-                ? [...byQ('Q2'), ...byQ('Q4')]
-                : [...byQ('Q3'), ...byQ('Q1')];
-            let n = 1;
-            tee1.forEach((g) => { g.flightNumber = n++; });
-            tee10.forEach((g) => { g.flightNumber = n++; });
-        };
-        assignFlightNumbers(maleGroups);
-        assignFlightNumbers(femaleGroups);
-
-        // Striscia FIG: estremi (min/max) per quadrante (giro normale doppio tee).
-        // Il giorno 2 i quadranti ruotano di posizione: nella striscia vanno
-        // rietichettati affinché l'etichetta INVERTIRE segua i numeri.
-        // Mappa giorno 2: l'etichetta Qx mostra i giocatori del quadrante
-        // figSource[Qx] (Q1←Q3, Q2←Q4, Q3←Q1, Q4←Q2).
-        const figSource = dayNumber === 1
-            ? { Q1: 'Q1', Q2: 'Q2', Q3: 'Q3', Q4: 'Q4' }
-            : { Q1: 'Q3', Q2: 'Q4', Q3: 'Q1', Q4: 'Q2' };
-        this.figQuadranti = [];
-        ['Q1', 'Q2', 'Q3', 'Q4'].forEach((label) => {
-            this.pushFigQuadrante('Uomini', label, maleGroups.filter(g => g.quadrant === figSource[label]));
-        });
-        ['Q1', 'Q2', 'Q3', 'Q4'].forEach((label) => {
-            this.pushFigQuadrante('Donne', label, femaleGroups.filter(g => g.quadrant === figSource[label]));
-        });
-
-        // Filter groups by type
-        const maleEarlyGroups = maleGroups.filter(g => g.type === 'Early');
-        const maleLateGroups = maleGroups.filter(g => g.type === 'Late');
-        const femaleEarlyGroups = femaleGroups.filter(g => g.type === 'Early');
-        const femaleLateGroups = femaleGroups.filter(g => g.type === 'Late');
-
-        // Generate table based on competition type
-        const gara = this.config.garaNT;
-        let tableHTML = '';
-
-        if (gara === COMPETITION_TYPES.GARA_54) {
-            tableHTML = this.generate54HoleTableNew(
-                maleEarlyGroups, maleLateGroups,
-                femaleEarlyGroups, femaleLateGroups,
-                dayNumber
-            );
-        } else {
-            // GARA_36 or default
-            tableHTML = this.generate36HoleTableNew(
-                maleEarlyGroups, maleLateGroups,
-                femaleEarlyGroups, femaleLateGroups,
-                dayNumber
-            );
-        }
-
-        // Calculate and display timing info
-        const timingInfo = this.calculateTimingInfo(maleGroups, femaleGroups);
-        const infoHTML = `
-      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 20px; padding: 15px; background: #e8f5e8; border-radius: 8px;">
-        <div style="text-align: center; padding: 10px; background: white; border-radius: 4px;">
-          <strong style="display: block; font-size: 18px; color: #2c5530;">${timingInfo.lastEarlyTime}</strong>
-          <span>Ultima Partenza Early</span>
-        </div>
-        <div style="text-align: center; padding: 10px; background: white; border-radius: 4px;">
-          <strong style="display: block; font-size: 18px; color: #2c5530;">${timingInfo.firstLateTime}</strong>
-          <span>Prima Partenza Late</span>
-        </div>
-        <div style="text-align: center; padding: 10px; background: white; border-radius: 4px;">
-          <strong style="display: block; font-size: 18px; color: #2c5530;">${timingInfo.finishTime}</strong>
-          <span>Fine Gara Stimata</span>
-        </div>
-      </div>
-    `;
-
-        this.figFlights = this._figFlightsBuffer;
-        return infoHTML + `<table>${tableHTML}</table>`;
-    }
-
-    /**
-     * Calculates timing information for display
-     */
-    /**
-     * Calculates timing information for display
-     */
-    calculateTimingInfo(maleGroups, femaleGroups) {
-        const startTime = this.config.startTime;
-        const gap = this.config.gap;
-        const roundTime = this.config.round;
-        const compatto = this.config.compatto;
-
-        // Calcola early groups
-        const maleEarlyCount = maleGroups.filter(g => g.type === 'Early').length;
-        const femaleEarlyCount = femaleGroups.filter(g => g.type === 'Early').length;
-        const totalEarlyFlights = Math.ceil((maleEarlyCount + femaleEarlyCount) / 2);
-
-        // Calcola ultima partenza early
-        let currentTime = startTime;
-        for (let i = 0; i < totalEarlyFlights; i++) {
-            currentTime = addTime(currentTime, gap);
-        }
-        const lastEarlyTime = currentTime;
-
-    // Calculate first late time
-    let firstLateTime = lastEarlyTime;
-    if (compatto === COMPACT_TYPES.EARLY_LATE) {
-      firstLateTime = addTime(firstLateTime, halfTime(roundTime));
-    } else {
-    // Early(<12): partenza immediata o con gap minimo (solo 10 minuti extra)
-    firstLateTime = addTime(lastEarlyTime, '00:10');
-    }
-
-        // Calcola fine gara
-        const totalGroups = maleGroups.length + femaleGroups.length;
-        const totalFlights = Math.ceil(totalGroups / 2);
-        let finishTime = startTime;
-        for (let i = 0; i < totalFlights; i++) {
-            finishTime = addTime(finishTime, gap);
-        }
-        finishTime = addTime(finishTime, roundTime);
-
-        return {
-            lastEarlyTime,
-            firstLateTime,
-            finishTime
-        };
-    }
-
-    /**
-     * NEW: Generates 54-hole table with new quadrant logic
-     * Correct order: Early Male -> Early Female -> (wait crossing) -> Late Female -> Late Male
-     */
-    generate54HoleTableNew(maleEarlyGroups, maleLateGroups, femaleEarlyGroups, femaleLateGroups, dayNumber) {
-        let html = this.generateTableHeader(true);
-        let currentTime = this.config.startTime;
-        const gap = this.config.gap;
-        const compatto = this.config.compatto;
-        const roundTime = this.config.round;
-        const colors = TABLE_COLORS.teeColors;
-
-        let maleMatchNumber = 1;
-        let femaleMatchNumber = 1;
-        let lastEarlyTime = '';
-        let firstLateTime = '';
-
-        if (dayNumber === 1) {
-            // Day 1: Standard order
-            // 1. EARLY MALE: Q1->Tee1, Q2->Tee10
-            let maleEarlyQ1 = maleEarlyGroups.filter(g => g.quadrant === 'Q1');
-            let maleEarlyQ2 = maleEarlyGroups.filter(g => g.quadrant === 'Q2');
-
-            html += this.buildGroupTableRows(
-                maleEarlyQ1,
-                maleEarlyQ2,
-                TABLE_COLORS.men,
-                colors.orange,
-                colors.lightGreen,
-                currentTime,
-                gap,
-                'M',
-                maleMatchNumber
-            );
-
-            // Calculate time correctly
-            const maleEarlyMatches = Math.max(maleEarlyQ1.length, maleEarlyQ2.length);
-            for (let i = 0; i < maleEarlyMatches; i++) {
-                currentTime = addTime(currentTime, gap);
-            }
-            currentTime = addTime(currentTime, '00:10');
-            maleMatchNumber += maleEarlyQ1.length + maleEarlyQ2.length;
-
-            // 2. EARLY FEMALE: Q1->Tee1, Q2->Tee10
-            if (femaleEarlyGroups.length > 0) {
-                let femaleEarlyQ1 = femaleEarlyGroups.filter(g => g.quadrant === 'Q1');
-                let femaleEarlyQ2 = femaleEarlyGroups.filter(g => g.quadrant === 'Q2');
-
-                html += this.buildGroupTableRows(
-                    femaleEarlyQ1,
-                    femaleEarlyQ2,
-                    TABLE_COLORS.women,
-                    'transparent',
-                    'transparent',
-                    currentTime,
-                    gap,
-                    'F',
-                    femaleMatchNumber
-                );
-
-                const femaleEarlyMatches = Math.max(femaleEarlyQ1.length, femaleEarlyQ2.length);
-                for (let i = 0; i < femaleEarlyMatches; i++) {
-                    currentTime = addTime(currentTime, gap);
-                }
-                femaleMatchNumber += femaleEarlyQ1.length + femaleEarlyQ2.length;
-            }
-
-            lastEarlyTime = currentTime;
-
-            // Add spacing and wait for crossing
-            html += '<tr><td colspan="20" class="py-2">&nbsp;</td></tr>';
-
-      // Wait for early players to pass through
-      if (compatto === COMPACT_TYPES.EARLY_LATE) {
-        currentTime = addTime(currentTime, halfTime(roundTime));
-      } else {
-  // Early(<12): partenza immediata con gap minimo (nessun crossing)
-  currentTime = addTime(lastEarlyTime, '00:10');
-      }
-
-            firstLateTime = currentTime;
-
-            // 3. LATE FEMALE: Q3->Tee1, Q4->Tee10
-            if (femaleLateGroups.length > 0) {
-                let femaleLateQ3 = femaleLateGroups.filter(g => g.quadrant === 'Q3');
-                let femaleLateQ4 = femaleLateGroups.filter(g => g.quadrant === 'Q4');
-
-                html += this.buildGroupTableRows(
-                    femaleLateQ3,
-                    femaleLateQ4,
-                    TABLE_COLORS.women,
-                    'transparent',
-                    'transparent',
-                    currentTime,
-                    gap,
-                    'F',
-                    femaleMatchNumber
-                );
-
-                const femaleLateMatches = Math.max(femaleLateQ3.length, femaleLateQ4.length);
-                for (let i = 0; i < femaleLateMatches; i++) {
-                    currentTime = addTime(currentTime, gap);
-                }
-                currentTime = addTime(currentTime, '00:10');
-                femaleMatchNumber += femaleLateQ3.length + femaleLateQ4.length;
-            }
-
-            // 4. LATE MALE: Q3->Tee1, Q4->Tee10
-            let maleLateQ3 = maleLateGroups.filter(g => g.quadrant === 'Q3');
-            let maleLateQ4 = maleLateGroups.filter(g => g.quadrant === 'Q4');
-
-            html += this.buildGroupTableRows(
-                maleLateQ3,
-                maleLateQ4,
-                TABLE_COLORS.men,
-                colors.lightGray,
-                colors.yellow,
-                currentTime,
-                gap,
-                'M',
-                maleMatchNumber
-            );
-
-        } else {
-            // Day 2: Rotated order
-            // 1. Men Late groups (Q3,Q4) go Early: Q4->Tee1, Q3->Tee10
-            let maleLateQ3 = maleLateGroups.filter(g => g.quadrant === 'Q3');
-            let maleLateQ4 = maleLateGroups.filter(g => g.quadrant === 'Q4');
-
-            html += this.buildGroupTableRows(
-                maleLateQ4,  // Q4 to Tee1
-                maleLateQ3,  // Q3 to Tee10
-                TABLE_COLORS.men,
-                colors.orange,
-                colors.lightGreen,
-                currentTime,
-                gap,
-                'M',
-                maleMatchNumber
-            );
-
-            const maleLateMatches = Math.max(maleLateQ3.length, maleLateQ4.length);
-            for (let i = 0; i < maleLateMatches; i++) {
-                currentTime = addTime(currentTime, gap);
-            }
-            currentTime = addTime(currentTime, '00:10');
-            maleMatchNumber += maleLateQ3.length + maleLateQ4.length;
-
-            // 2. Female Late groups (Q3,Q4) go Early: Q4->Tee1, Q3->Tee10
-            if (femaleLateGroups.length > 0) {
-                let femaleLateQ3 = femaleLateGroups.filter(g => g.quadrant === 'Q3');
-                let femaleLateQ4 = femaleLateGroups.filter(g => g.quadrant === 'Q4');
-
-                html += this.buildGroupTableRows(
-                    femaleLateQ4,  // Q4 to Tee1
-                    femaleLateQ3,  // Q3 to Tee10
-                    TABLE_COLORS.women,
-                    'transparent',
-                    'transparent',
-                    currentTime,
-                    gap,
-                    'F',
-                    femaleMatchNumber
-                );
-
-                const femaleLateMatches = Math.max(femaleLateQ3.length, femaleLateQ4.length);
-                for (let i = 0; i < femaleLateMatches; i++) {
-                    currentTime = addTime(currentTime, gap);
-                }
-                femaleMatchNumber += femaleLateQ3.length + femaleLateQ4.length;
-            }
-
-            lastEarlyTime = currentTime;
-
-            // Add spacing and wait
-            html += '<tr><td colspan="20" class="py-2">&nbsp;</td></tr>';
-
-  if (compatto === COMPACT_TYPES.EARLY_LATE) {
-    currentTime = addTime(currentTime, halfTime(roundTime));
-  } else {
-  // Early(<12): partenza immediata con gap minimo (nessun crossing)
-  currentTime = addTime(lastEarlyTime, '00:10');
+    // MOTORE UNICO: ogni formato noto è gestito sopra (finale, ∩ giovanili/
+    // trofei/patrocinate, cerchio/clessidra 54-72, sessioni-miste Prova). Se si
+    // arriva qui il `garaNT` non è in COMPETITION_FORMATS: errore esplicito
+    // (il vecchio flusso generate54/36HoleTableNew è stato rimosso).
+    throw new Error(`Formato gara non riconosciuto per doppio tee: "${garaNT}". Aggiungerlo a COMPETITION_FORMATS (config.js).`);
   }
 
-            firstLateTime = currentTime;
-
-            // 3. Female Early groups (Q1,Q2) go Late: Q2->Tee1, Q1->Tee10
-            if (femaleEarlyGroups.length > 0) {
-                let femaleEarlyQ1 = femaleEarlyGroups.filter(g => g.quadrant === 'Q1');
-                let femaleEarlyQ2 = femaleEarlyGroups.filter(g => g.quadrant === 'Q2');
-
-                html += this.buildGroupTableRows(
-                    femaleEarlyQ2,  // Q2 to Tee1
-                    femaleEarlyQ1,  // Q1 to Tee10
-                    TABLE_COLORS.women,
-                    'transparent',
-                    'transparent',
-                    currentTime,
-                    gap,
-                    'F',
-                    femaleMatchNumber
-                );
-
-                const femaleEarlyMatches = Math.max(femaleEarlyQ1.length, femaleEarlyQ2.length);
-                for (let i = 0; i < femaleEarlyMatches; i++) {
-                    currentTime = addTime(currentTime, gap);
-                }
-                currentTime = addTime(currentTime, '00:10');
-                femaleMatchNumber += femaleEarlyQ1.length + femaleEarlyQ2.length;
-            }
-
-            // 4. Male Early groups (Q1,Q2) go Late: Q2->Tee1, Q1->Tee10
-            let maleEarlyQ1 = maleEarlyGroups.filter(g => g.quadrant === 'Q1');
-            let maleEarlyQ2 = maleEarlyGroups.filter(g => g.quadrant === 'Q2');
-
-            html += this.buildGroupTableRows(
-                maleEarlyQ2,  // Q2 to Tee1
-                maleEarlyQ1,  // Q1 to Tee10
-                TABLE_COLORS.men,
-                colors.lightGray,
-                colors.yellow,
-                currentTime,
-                gap,
-                'M',
-                maleMatchNumber
-            );
-        }
-        // Store timing info for display
-        this.lastEarlyTime = lastEarlyTime;
-        this.firstLateTime = firstLateTime;
-
-        return html + '</tbody>';
-    }
-
-    /**
-     * NEW: Generates 36-hole table with new quadrant logic
-     */
-    generate36HoleTableNew(maleEarlyGroups, maleLateGroups, femaleEarlyGroups, femaleLateGroups, dayNumber) {
-        let html = this.generateTableHeader(true);
-        let currentTime = this.config.startTime;
-        const gap = this.config.gap;
-        const compatto = this.config.compatto;
-        const roundTime = this.config.round;
-        const colors = TABLE_COLORS.teeColors;
-
-        let maleMatchNumber = 1;
-        let femaleMatchNumber = 1;
-        let lastEarlyTime = '';
-        let firstLateTime = '';
-
-        // Similar logic to 54-hole but with different arrangement
-        // Implementation follows the same pattern as generate54HoleTableNew
-        // but with different quadrant assignments for 36-hole competition
-
-        if (dayNumber === 1) {
-            // Day 1: Standard order
-            // 1. EARLY MALE: Q1->Tee1, Q2->Tee10
-            let maleEarlyQ1 = maleEarlyGroups.filter(g => g.quadrant === 'Q1');
-            let maleEarlyQ2 = maleEarlyGroups.filter(g => g.quadrant === 'Q2');
-
-            html += this.buildGroupTableRows(
-                maleEarlyQ1,
-                maleEarlyQ2,
-                TABLE_COLORS.men,
-                colors.orange,
-                colors.lightGreen,
-                currentTime,
-                gap,
-                'M',
-                maleMatchNumber
-            );
-
-            // Calculate time correctly
-            const maleEarlyMatches = Math.max(maleEarlyQ1.length, maleEarlyQ2.length);
-            for (let i = 0; i < maleEarlyMatches; i++) {
-                currentTime = addTime(currentTime, gap);
-            }
-            currentTime = addTime(currentTime, '00:10');
-            maleMatchNumber += maleEarlyQ1.length + maleEarlyQ2.length;
-
-            // 2. EARLY FEMALE: Q1->Tee1, Q2->Tee10
-            if (femaleEarlyGroups.length > 0) {
-                let femaleEarlyQ1 = femaleEarlyGroups.filter(g => g.quadrant === 'Q1');
-                let femaleEarlyQ2 = femaleEarlyGroups.filter(g => g.quadrant === 'Q2');
-
-                html += this.buildGroupTableRows(
-                    femaleEarlyQ1,
-                    femaleEarlyQ2,
-                    TABLE_COLORS.women,
-                    'transparent',
-                    'transparent',
-                    currentTime,
-                    gap,
-                    'F',
-                    femaleMatchNumber
-                );
-
-                const femaleEarlyMatches = Math.max(femaleEarlyQ1.length, femaleEarlyQ2.length);
-                for (let i = 0; i < femaleEarlyMatches; i++) {
-                    currentTime = addTime(currentTime, gap);
-                }
-                femaleMatchNumber += femaleEarlyQ1.length + femaleEarlyQ2.length;
-            }
-
-            lastEarlyTime = currentTime;
-
-            // Add spacing and wait for crossing
-            html += '<tr><td colspan="20" class="py-2">&nbsp;</td></tr>';
-
-      // Wait for early players to pass through
-      if (compatto === COMPACT_TYPES.EARLY_LATE) {
-        currentTime = addTime(currentTime, halfTime(roundTime));
-      } else {
-  // Early(<12): partenza immediata con gap minimo (nessun crossing)
-  currentTime = addTime(lastEarlyTime, '00:10');
-      }
-
-            firstLateTime = currentTime;
-
-            // 3. LATE FEMALE: Q3->Tee1, Q4->Tee10
-            if (femaleLateGroups.length > 0) {
-                let femaleLateQ3 = femaleLateGroups.filter(g => g.quadrant === 'Q3');
-                let femaleLateQ4 = femaleLateGroups.filter(g => g.quadrant === 'Q4');
-
-                html += this.buildGroupTableRows(
-                    femaleLateQ3,
-                    femaleLateQ4,
-                    TABLE_COLORS.women,
-                    'transparent',
-                    'transparent',
-                    currentTime,
-                    gap,
-                    'F',
-                    femaleMatchNumber
-                );
-
-                const femaleLateMatches = Math.max(femaleLateQ3.length, femaleLateQ4.length);
-                for (let i = 0; i < femaleLateMatches; i++) {
-                    currentTime = addTime(currentTime, gap);
-                }
-                currentTime = addTime(currentTime, '00:10');
-                femaleMatchNumber += femaleLateQ3.length + femaleLateQ4.length;
-            }
-
-            // 4. LATE MALE: Q3->Tee1, Q4->Tee10
-            let maleLateQ3 = maleLateGroups.filter(g => g.quadrant === 'Q3');
-            let maleLateQ4 = maleLateGroups.filter(g => g.quadrant === 'Q4');
-
-            html += this.buildGroupTableRows(
-                maleLateQ3,
-                maleLateQ4,
-                TABLE_COLORS.men,
-                colors.lightGray,
-                colors.yellow,
-                currentTime,
-                gap,
-                'M',
-                maleMatchNumber
-            );
-
-        } else {
-            // Day 2: Rotated order
-            // 1. Men Late groups (Q3,Q4) go Early: Q4->Tee1, Q3->Tee10
-            let maleLateQ3 = maleLateGroups.filter(g => g.quadrant === 'Q3');
-            let maleLateQ4 = maleLateGroups.filter(g => g.quadrant === 'Q4');
-
-            html += this.buildGroupTableRows(
-                maleLateQ4,  // Q4 to Tee1
-                maleLateQ3,  // Q3 to Tee10
-                TABLE_COLORS.men,
-                colors.orange,
-                colors.lightGreen,
-                currentTime,
-                gap,
-                'M',
-                maleMatchNumber
-            );
-
-            const maleLateMatches = Math.max(maleLateQ3.length, maleLateQ4.length);
-            for (let i = 0; i < maleLateMatches; i++) {
-                currentTime = addTime(currentTime, gap);
-            }
-            currentTime = addTime(currentTime, '00:10');
-            maleMatchNumber += maleLateQ3.length + maleLateQ4.length;
-
-            // 2. Female Late groups (Q3,Q4) go Early: Q4->Tee1, Q3->Tee10
-            if (femaleLateGroups.length > 0) {
-                let femaleLateQ3 = femaleLateGroups.filter(g => g.quadrant === 'Q3');
-                let femaleLateQ4 = femaleLateGroups.filter(g => g.quadrant === 'Q4');
-
-                html += this.buildGroupTableRows(
-                    femaleLateQ4,  // Q4 to Tee1
-                    femaleLateQ3,  // Q3 to Tee10
-                    TABLE_COLORS.women,
-                    'transparent',
-                    'transparent',
-                    currentTime,
-                    gap,
-                    'F',
-                    femaleMatchNumber
-                );
-
-                const femaleLateMatches = Math.max(femaleLateQ3.length, femaleLateQ4.length);
-                for (let i = 0; i < femaleLateMatches; i++) {
-                    currentTime = addTime(currentTime, gap);
-                }
-                femaleMatchNumber += femaleLateQ3.length + femaleLateQ4.length;
-            }
-
-            lastEarlyTime = currentTime;
-
-            // Add spacing and wait
-            html += '<tr><td colspan="20" class="py-2">&nbsp;</td></tr>';
-
-  if (compatto === COMPACT_TYPES.EARLY_LATE) {
-    currentTime = addTime(currentTime, halfTime(roundTime));
-  } else {
-  // Early(<12): partenza immediata con gap minimo (nessun crossing)
-  currentTime = addTime(lastEarlyTime, '00:10');
-  }
-
-            firstLateTime = currentTime;
-
-            // 3. Female Early groups (Q1,Q2) go Late: Q2->Tee1, Q1->Tee10
-            if (femaleEarlyGroups.length > 0) {
-                let femaleEarlyQ1 = femaleEarlyGroups.filter(g => g.quadrant === 'Q1');
-                let femaleEarlyQ2 = femaleEarlyGroups.filter(g => g.quadrant === 'Q2');
-
-                html += this.buildGroupTableRows(
-                    femaleEarlyQ2,  // Q2 to Tee1
-                    femaleEarlyQ1,  // Q1 to Tee10
-                    TABLE_COLORS.women,
-                    'transparent',
-                    'transparent',
-                    currentTime,
-                    gap,
-                    'F',
-                    femaleMatchNumber
-                );
-
-                const femaleEarlyMatches = Math.max(femaleEarlyQ1.length, femaleEarlyQ2.length);
-                for (let i = 0; i < femaleEarlyMatches; i++) {
-                    currentTime = addTime(currentTime, gap);
-                }
-                currentTime = addTime(currentTime, '00:10');
-                femaleMatchNumber += femaleEarlyQ1.length + femaleEarlyQ2.length;
-            }
-
-            // 4. Male Early groups (Q1,Q2) go Late: Q2->Tee1, Q1->Tee10
-            let maleEarlyQ1 = maleEarlyGroups.filter(g => g.quadrant === 'Q1');
-            let maleEarlyQ2 = maleEarlyGroups.filter(g => g.quadrant === 'Q2');
-
-            html += this.buildGroupTableRows(
-                maleEarlyQ2,  // Q2 to Tee1
-                maleEarlyQ1,  // Q1 to Tee10
-                TABLE_COLORS.men,
-                colors.lightGray,
-                colors.yellow,
-                currentTime,
-                gap,
-                'M',
-                maleMatchNumber
-            );
-        }
-        // Store timing info for display
-        this.lastEarlyTime = lastEarlyTime;
-        this.firstLateTime = firstLateTime;
-
-        return html + '</tbody>';
-    }
 
     /**
      * NEW: Helper to build table rows from groups
@@ -2000,47 +1682,29 @@ export class QuadrantiLogic {
             this.figQuadranti = [];
             this.pushFigQuadrante('Uomini', 'Classifica inversa · Tee 1', allGroups);
         } else if (isFinal) {
-            // Sempre numerico: ranks 1..N indipendentemente da nominativo.
-            // N qui è il numero di qualificati dopo il taglio.
-            const ranksM = range(1, playersFinal);
-            const ranksF = range(1, proetteFinal);
-            // Split per FLIGHT count, ceil sul front (asimmetrico per N dispari
-            // di flight, come da immagine donne 27 → 5 front + 4 back).
+            // ── GIRO FINALE per classifica (tee unico) — via MOTORE UNICO ──
+            // Sempre numerico (ranks 1..N, N = qualificati dopo il taglio).
+            // 3 blocchi nell'ordine di partenza: uomini back-half → uomini
+            // front-half → donne. Ordine interno DECRESCENTE (per classifica:
+            // rank alto a sinistra). Ordine dei GRUPPI dai PDF (54/72 buche
+            // "3° GIRO PER CLASSIFICA TEE 1"):
+            //   back-half  → gruppi CRESCENTI ([30,29,28],[33,32,31]…[54,53,52])
+            //   front-half → gruppi DECRESCENTI ([27,26,25]…[3,2,1])
+            //   donne      → gruppi DECRESCENTI
+            // (Il back-half a gruppi crescenti era il bug B1: il codice li
+            // produceva decrescenti, divergendo dal PDF.)
             const totalFlightsM = Math.ceil(playersFinal / mod);
             const frontFlightsM = Math.ceil(totalFlightsM / 2);
             const frontCountM = Math.min(frontFlightsM * mod, playersFinal);
-            const backMen = ranksM.slice(frontCountM);   // rank frontCountM+1..N (back)
-            const frontMen = ranksM.slice(0, frontCountM); // rank 1..frontCountM (front)
 
-            // Helper inline (non è una "nuova funzione" del modulo: è una
-            // closure locale a generateSingleTee). Produce gruppi in ordine
-            // decrescente di rank a partire dalla fine dell'array: il primo
-            // gruppo contiene i rank più alti, l'ultimo i più bassi. Display
-            // intra-gruppo: rank alto a sinistra (es. ranks [25,26,27] →
-            // gruppo [27,26,25]).
-            const desc = (arr, cat) => {
-                const groups = [];
-                for (let i = arr.length - 1; i >= 0; i -= mod) {
-                    const group = [];
-                    for (let j = 0; j < mod && (i - j) >= 0; j++) {
-                        group.push(arr[i - j]);
-                    }
-                    // group è già [27,26,25] al primo step: rank alto a sinistra
-                    groups.push({ players: group, category: cat });
-                }
-                return groups;
-            };
-
-            // Ordine di partenza (tee unico): uomini back-half → uomini
-            // front-half → donne. TUTTI i blocchi vanno dal rank più ALTO al
-            // più BASSO (decrescente): il peggior classificato apre il
-            // blocco, il miglior classificato lo chiude. Combinando i due
-            // blocchi maschili il campo uomini scorre da rank N a rank 1.
-            const blockMenBack  = desc(backMen, 'M');   // halfM+1..N: back-half decrescente
-            const blockMenFront = desc(frontMen, 'M');  // 1..halfM: front-half decrescente
-            const blockWomen    = ranksF.length > 0     // donne decrescente (chiudono)
-                ? desc(ranksF, 'F')
-                : [];
+            const buildSec = (categoria, lo, hi, groupOrder) =>
+                this.renderQuadranti(
+                    [{ categoria, tee: 1, lo, hi, internal: 'desc', groupOrder, source: null }],
+                    mod
+                );
+            const blockMenBack  = buildSec('M', frontCountM + 1, playersFinal, 'asc');
+            const blockMenFront = buildSec('M', 1, frontCountM, 'desc');
+            const blockWomen    = proetteFinal > 0 ? buildSec('F', 1, proetteFinal, 'desc') : [];
 
             allGroups = [...blockMenBack, ...blockMenFront, ...blockWomen];
             if (blockMenBack.length > 0) {
@@ -2056,107 +1720,35 @@ export class QuadrantiLogic {
             this.pushFigQuadrante('Uomini', 'Blocco 2 · front-half', blockMenFront);
             this.pushFigQuadrante('Donne',  'Blocco 3',              blockWomen);
         } else {
-            // Giri normali (prima/seconda) — comportamento storico invariato
+            // Giri normali (prima/seconda) — tee unico
             const { atleti, atlete } = this.getPlayerArrays();
-            const maleGroups = this.generatePlayerGroups(players, mod, atleti, 'M');
-            const femaleGroups = proette > 0 ? this.generatePlayerGroups(proette, mod, atlete, 'F') : [];
 
-            // Striscia FIG: tee unico, quadranti Q1-Q4 da generatePlayerGroups
+            // generatePlayerGroups usato SOLO per la striscia FIG (visualizzazione quadranti).
+            // Per la tabella orari si usa il MOTORE UNICO (renderQuadranti, sotto).
+            const maleGroupsForFig  = this.generatePlayerGroups(players, mod, atleti, 'M');
+            const femaleGroupsForFig = proette > 0
+                ? this.generatePlayerGroups(proette, mod, atlete, 'F') : [];
+
+            // Striscia FIG
             this.figQuadranti = [];
             ['Q2', 'Q1', 'Q4', 'Q3'].forEach((q) => {
-                this.pushFigQuadrante('Uomini', q, maleGroups.filter(g => g.quadrant === q));
+                this.pushFigQuadrante('Uomini', q, maleGroupsForFig.filter(g => g.quadrant === q));
             });
             ['Q2', 'Q1', 'Q4', 'Q3'].forEach((q) => {
-                this.pushFigQuadrante('Donne', q, femaleGroups.filter(g => g.quadrant === q));
+                this.pushFigQuadrante('Donne', q, femaleGroupsForFig.filter(g => g.quadrant === q));
             });
 
-            // TEE UNICO — layout FIG ("Schema TEE UNICO" del PDF ufficiale).
-            //
-            // Ogni quadrante è INTERNAMENTE DECRESCENTE (rank alto → rank basso
-            // dentro al blocco). generatePlayerGroups, scritto per il doppio
-            // tee, produce Q1 e Q4 crescenti: in tee unico vanno invertiti.
-            //
-            // Due schemi distinti a seconda del formato:
-            //
-            // A) Gara 54 buche, Gara 72 buche, Gara con patrocinio FIG, Trofeo
-            //    Giovanile Federale → "schema Q2-Q1 / Q4-Q3" (uomini Early in
-            //    apertura, Late in chiusura, donne in mezzo):
-            //      1° giorno: M-Q2 → M-Q1 → F-Q2 → F-Q1 → F-Q4 → F-Q3 → M-Q4 → M-Q3
-            //      2° giorno: rotazione Q1↔Q4 e Q2↔Q3 del 1° giorno.
-            //
-            // B) Gara Giovanile, Teodoro Soldati → "schema Q4-Q3-…-Q2-Q1"
-            //    (uomini Late in apertura, Early in chiusura, donne in mezzo
-            //    con tutti i loro 4 quadranti):
-            //      Giro unico: M-Q4 → M-Q3 → F-Q4 → F-Q3 → F-Q2 → F-Q1 → M-Q2 → M-Q1
-            //    (questi formati hanno solo "Giro unico", quindi nessuna rotazione.)
-            // FIX FONDAMENTALE: le label Q1/Q2/Q3/Q4 nel codice usano la
-            // convenzione bilanciaQuadranti del DOPPIO tee:
-            //   bQ.Q2 = rank più BASSO   (1..limit1)
-            //   bQ.Q1 = lower-middle      (limit1+1..limit2)
-            //   bQ.Q4 = upper-middle      (limit2+1..limit3)
-            //   bQ.Q3 = rank più ALTO    (limit3+1..N)
-            // Lo SCHEMA PDF "TEE UNICO" usa label posizionali per rank:
-            //   PDF.Q1 = rank più basso → corrisponde a bQ.Q2
-            //   PDF.Q2 = lower-middle   → corrisponde a bQ.Q1
-            //   PDF.Q3 = upper-middle   → corrisponde a bQ.Q4
-            //   PDF.Q4 = rank più alto  → corrisponde a bQ.Q3
-            // Rinominiamo a P1..P4 (Position by rank) per non confonderci più.
-            const positionalByRank = (groups) => {
-                const byQ = { Q1: [], Q2: [], Q3: [], Q4: [] };
-                groups.forEach((g) => byQ[g.quadrant].push(g));
-                return {
-                    P1: byQ.Q2.slice(),               // rank più basso, desc nativo
-                    P2: byQ.Q1.slice().reverse(),     // lower-middle (era asc → desc)
-                    P3: byQ.Q4.slice().reverse(),     // upper-middle (era asc → desc)
-                    P4: byQ.Q3.slice(),               // rank più alto, desc nativo
-                };
-            };
-            const M = positionalByRank(maleGroups);
-            const F = positionalByRank(femaleGroups);
-
-            // SCHEMA PDF "TEE UNICO" (notazione user: P1=basso, P4=alto):
-            //
-            // A) Gara 54 buche, Gara 72 buche, Gara con patrocinio FIG, Trofeo
-            //    Giovanile Federale:
-            //      1° giorno: M-P2 → M-P1 → F-P2 → F-P1 → F-P4 → F-P3 → M-P4 → M-P3
-            //      2° giorno: rotazione P1↔P4, P2↔P3 del 1° giorno.
-            //
-            // B) Gara Giovanile, Teodoro Soldati (giro unico, no rotazione):
-            //      M-P4 → M-P3 → F-P4 → F-P3 → F-P2 → F-P1 → M-P2 → M-P1
-            //
-            // Risultato per Giovanile 90M+48F: rank monotonico 90→46 in apertura,
-            // donne 48→1 in mezzo, rank monotonico 45→1 in chiusura (nessun
-            // "salto" Q3↔Q4 come nello schema vecchio).
-            const isSchemaB = (
-                garaNT === COMPETITION_TYPES.GARA_GIOVANILE ||
-                garaNT === COMPETITION_TYPES.TEODORO_SOLDATI
+            // Costruzione allGroups via MOTORE UNICO (renderQuadranti).
+            // costruisciQuadrantiSingleTee decide le 4 sezioni e l'ordine
+            // (uomini-alti → donne → uomini-bassi per schema B / 2° giro; invertito
+            // al 1° giro). espandiSezione applica ordine interno CRESCENTE
+            // (qualificazione = ordine di merito, vedi TEE UNICO.pdf) e mette il
+            // twosome in testa alla sezione di apertura. Sostituisce
+            // buildSingleTeeSection + l'assemblaggio manuale di allGroups.
+            const quadranti = this.costruisciQuadrantiSingleTee(
+                round, garaNT, players, proette, mod, atleti, atlete
             );
-
-            if (isSchemaB) {
-                allGroups = [
-                    ...M.P4, ...M.P3,
-                    ...F.P4, ...F.P3, ...F.P2, ...F.P1,
-                    ...M.P2, ...M.P1,
-                ];
-            } else {
-                allGroups = round === ROUND_TYPES.FIRST
-                    ? [
-                        // 1° giro: leaders al centro (M-P1, F in mezzo,
-                        // M-P3 in fondo); ogni blocco monotonico decr.
-                        ...M.P2, ...M.P1,
-                        ...F.P2, ...F.P1, ...F.P4, ...F.P3,
-                        ...M.P4, ...M.P3,
-                    ]
-                    : [
-                        // 2° giro: worst-on-top, leaders in fondo. Sequenza
-                        // monotonica decrescente per blocchi: P4→P3 in cima,
-                        // donne tutte decrescenti (P4→P1) in mezzo, P2→P1
-                        // in fondo. Coincide con lo Schema B (Giovanile).
-                        ...M.P4, ...M.P3,
-                        ...F.P4, ...F.P3, ...F.P2, ...F.P1,
-                        ...M.P2, ...M.P1,
-                    ];
-            }
+            allGroups = this.renderQuadranti(quadranti, mod);
         }
 
         // Build single tee table (mod può differire da config nei giri a coppie)

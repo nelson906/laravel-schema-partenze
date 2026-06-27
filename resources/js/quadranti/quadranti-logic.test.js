@@ -715,22 +715,22 @@ describe('REGRESSIONE — generateDoubleTee (prima/seconda)', () => {
     });
   });
 
-  it('flightStart: Q1 inizia a 1, Q3 subito dopo Q1 (Tee 1 in sequenza)', () => {
+  it('flightStart: Tee 1 numerati per primi (continui), poi Tee 10', () => {
     const l = makeLogic({
       players: 144, proette: 0, playersPerFlight: 3, nominativo: 'Off',
       garaNT: 'Gara 54 buche', doppiePartenze: 'Doppie Partenze',
       compatto: 'Early/Late', startTime: '08:00', gap: '00:10', round: '04:30',
     });
     l.generateDoubleTee('prima');
-    const q = {};
-    l.figQuadranti.filter((x) => x.categoria === 'Uomini')
-      .forEach((x) => { q[x.label] = x; });
-    // Q1 è il primo Tee 1 → flightStart 1
-    expect(q.Q1.flightStart).toBe(1);
-    // Q3 segue Q1 sullo stesso Tee 1: il suo flightStart > Q1.flightStart
-    if (q.Q3) expect(q.Q3.flightStart).toBeGreaterThan(q.Q1.flightStart);
-    // Q2 (Tee 10) inizia dopo tutti i Tee 1
-    if (q.Q2) expect(q.Q2.flightStart).toBeGreaterThan(q.Q1.flightStart);
+    // Striscia FIG a blocchi (motore unico): label "Blocco N · Tee 1|10".
+    const men = l.figQuadranti.filter((x) => x.categoria === 'Uomini');
+    const tee1 = men.filter((x) => /Tee 1$/.test(x.label));
+    const tee10 = men.filter((x) => /Tee 10$/.test(x.label));
+    // Il primo blocco Tee 1 apre la numerazione a flight 1.
+    expect(Math.min(...tee1.map((x) => x.flightStart))).toBe(1);
+    // Tutti i Tee 10 sono numerati DOPO tutti i Tee 1 (regola unificata).
+    expect(Math.min(...tee10.map((x) => x.flightStart)))
+      .toBeGreaterThan(Math.max(...tee1.map((x) => x.flightStart)));
   });
 });
 
@@ -793,34 +793,29 @@ describe('generateSingleTee — giro finale 54 buche', () => {
     );
   });
 
-  it('blocco 1 = back-half uomini (rank 28-54): primo gruppo (52,53,54) → display "54 53 52"', () => {
-    // REGOLA UNIFORME: tutti i blocchi partono dal rank PIÙ ALTO e finiscono
-    // col PIÙ BASSO. Per la back-half (28-54) significa: prima riga = ranks
-    // 52,53,54 (rank più alto in blocco = 54).
+  it('blocco 1 = back-half uomini (rank 28-54): primo gruppo (28,29,30) → display "30 29 28"', () => {
+    // PDF "3° GIRO PER CLASSIFICA TEE 1": la back-half ha gruppi CRESCENTI —
+    // prima riga = ranks 28,29,30 (display "30 29 28"), interno decrescente.
     const html = logic.generateSingleTee('finale');
     const bodyHtml = html.split('<tbody>')[1] || '';
     const firstRow = bodyHtml.split('</tr>')[0];
-    expect(firstRow).toContain('>54<');
-    expect(firstRow).toContain('>53<');
-    expect(firstRow).toContain('>52<');
+    expect(firstRow).toContain('>30<');
+    expect(firstRow).toContain('>29<');
+    expect(firstRow).toContain('>28<');
     // Nessun rank della front-half (es. 27) nella prima riga.
-    // Nota: Flight=1 e Tee=1 producono celle ">1<" non-player; usiamo 27
-    // come marker della front-half ad alto rank.
     expect(firstRow).not.toMatch(/>27</);
   });
 
-  it('blocco 1 ultimo gruppo = (28,29,30) → display "30 29 28"', () => {
-    // Ultima riga del blocco 1: ranks 28,29,30 (rank più basso del blocco =
-    // 28, miglior classificato della back-half). Stesso pattern di chiusura
-    // dei blocchi 2 e 3 (best in block teea per ultimo).
+  it('blocco 1 ultimo gruppo = (52,53,54) → display "54 53 52"', () => {
+    // PDF: la back-half (28-54) a gruppi crescenti CHIUDE coi rank più alti —
+    // 9° flight (index 8) = ranks 52,53,54 (display "54 53 52").
     const html = logic.generateSingleTee('finale');
     const bodyHtml = html.split('<tbody>')[1] || '';
     const rows = bodyHtml.split('</tr>').slice(0, -1); // ultima split è vuota
-    // 9° flight (index 8): back-half ultimo gruppo
     const row9 = rows[8];
-    expect(row9).toContain('>30<');
-    expect(row9).toContain('>29<');
-    expect(row9).toContain('>28<');
+    expect(row9).toContain('>54<');
+    expect(row9).toContain('>53<');
+    expect(row9).toContain('>52<');
   });
 
   it('blocco 2 = front-half uomini, primo gruppo (25-27), ultimo (1-3) → leader uomini ultimi', () => {
@@ -1306,48 +1301,32 @@ describe('Striscia FIG — quadrantRange / figQuadranti / generateFigStrip', () 
     });
   });
 
-  describe('rietichettatura quadranti giorno 2', () => {
-    it('giorno 1 → etichette Q1-Q4 invariate; giorno 2 → rietichettate', () => {
-      const l = makeLogic({
-        players: 144, proette: 0, playersPerFlight: 3, nominativo: 'Off',
-        garaNT: 'Gara 54 buche', doppiePartenze: 'Doppie Partenze',
-        compatto: 'Early/Late', startTime: '08:00', gap: '00:10', round: '04:30',
-      });
-      // Giorno 1: registra i range per etichetta
-      l.generateDoubleTee('prima');
-      const g1 = {};
-      l.figQuadranti.filter(q => q.categoria === 'Uomini')
-        .forEach(q => { g1[q.label] = `${q.first}-${q.last}`; });
-
-      // Giorno 2: i quadranti sono rietichettati Q1←Q3, Q2←Q4, Q3←Q1, Q4←Q2
-      l.generateDoubleTee('seconda');
-      const g2 = {};
-      l.figQuadranti.filter(q => q.categoria === 'Uomini')
-        .forEach(q => { g2[q.label] = `${q.first}-${q.last}`; });
-
-      // L'etichetta Q1 del giorno 2 mostra i numeri del Q3 del giorno 1
-      expect(g2.Q1).toBe(g1.Q3);
-      expect(g2.Q2).toBe(g1.Q4);
-      expect(g2.Q3).toBe(g1.Q1);
-      expect(g2.Q4).toBe(g1.Q2);
+  describe('striscia FIG cerchio/clessidra (motore unico)', () => {
+    // Il remap "giorno 2" non esiste più: 1° giro (cerchio) e 2° giro (clessidra)
+    // sono descrittori espliciti distinti. La striscia FIG usa label "Blocco N · Tee X".
+    const cfg = {
+      players: 144, proette: 0, playersPerFlight: 3, nominativo: 'Off',
+      garaNT: 'Gara 54 buche', doppiePartenze: 'Doppie Partenze',
+      compatto: 'Early/Late', startTime: '08:00', gap: '00:10', round: '04:30',
+    };
+    it('1° e 2° giro: blocchi etichettati, tutti i 144 ranghi presenti', () => {
+      for (const g of ['prima', 'seconda']) {
+        const l = makeLogic(cfg);
+        l.generateDoubleTee(g);
+        const men = l.figQuadranti.filter((q) => q.categoria === 'Uomini');
+        expect(men.length).toBeGreaterThan(0);
+        expect(men.every((q) => /Blocco \d+ · Tee (1|10)/.test(q.label))).toBe(true);
+        const ranks = men.flatMap((q) => [q.first, q.last]);
+        expect(Math.min(...ranks)).toBe(1);
+        expect(Math.max(...ranks)).toBe(144);
+      }
     });
-
-    it('INVERTIRE giorno 1 su Q2/Q3 → giorno 2 su Q1/Q4', () => {
-      const l = makeLogic({
-        players: 144, proette: 0, playersPerFlight: 3, nominativo: 'Off',
-        garaNT: 'Gara 54 buche', doppiePartenze: 'Doppie Partenze',
-        compatto: 'Early/Late', startTime: '08:00', gap: '00:10', round: '04:30',
-      });
+    it('INVERTIRE marcato sui quadranti a terzetti decrescenti (Tee 10 early + Tee 1 late)', () => {
+      const l = makeLogic(cfg);
       l.generateDoubleTee('prima');
-      const inv1 = l.figQuadranti.filter(q => q.categoria === 'Uomini' && q.invertire)
-        .map(q => q.label).sort();
-      l.generateDoubleTee('seconda');
-      const inv2 = l.figQuadranti.filter(q => q.categoria === 'Uomini' && q.invertire)
-        .map(q => q.label).sort();
-      // Giorno 1: INVERTIRE su Q2, Q3
-      expect(inv1).toEqual(['Q2', 'Q3']);
-      // Giorno 2: gli stessi blocchi di numeri ora sono etichettati Q1, Q4
-      expect(inv2).toEqual(['Q1', 'Q4']);
+      const inv = l.figQuadranti.filter((q) => q.categoria === 'Uomini' && q.invertire);
+      // Cerchio: un Tee 10 (early ∩, metà bassa decrescente) + un Tee 1 (late ∪).
+      expect(inv.length).toBe(2);
     });
   });
 
@@ -1851,15 +1830,15 @@ describe('Giro finale tee unico — ordine blocchi (uomini back → uomini front
     expect(l.figQuadranti[2].categoria).toBe('Donne');
   });
 
-  it('TUTTI i blocchi decrescenti: B1 54→28, B2 27→1, B3 donne 27→1', () => {
-    // REGOLA UNIFORME: ogni blocco parte dal rank PIÙ ALTO e finisce col più
-    // BASSO. Combinando back+front, il campo uomini scorre da 54 a 1.
+  it('ordine blocchi dai PDF: B1 back-half CRESCENTE 28→54, B2 27→1, B3 donne 27→1', () => {
+    // PDF "3° GIRO PER CLASSIFICA TEE 1": back-half a gruppi CRESCENTI
+    // (28→54), front-half e donne a gruppi DECRESCENTI (27→1). Interno sempre
+    // decrescente (per classifica).
     const l = makeLogic(cfgFinale);
     l.generateSingleTee('finale');
-    // back-half decrescente: rank più alto 54 in cima, rank più basso 28 in
-    // fondo (= miglior classificato della back-half chiude il blocco)
-    expect(l.figQuadranti[0].first).toBe(54);
-    expect(l.figQuadranti[0].last).toBe(28);
+    // back-half crescente: parte da 28 (best back-half apre), chiude a 54
+    expect(l.figQuadranti[0].first).toBe(28);
+    expect(l.figQuadranti[0].last).toBe(54);
     // front-half decrescente: 27 → 1 (leader uomini chiude il blocco)
     expect(l.figQuadranti[1].first).toBe(27);
     expect(l.figQuadranti[1].last).toBe(1);
@@ -2063,9 +2042,11 @@ describe('Quadranti a U rovesciata (forma UR) — giovanili / patrocinate', () =
     expect(round('Gara con patrocinio FIG', 0).early).toBe('UR-R/L');
     expect(round('Gara con patrocinio FIG', 0).late).toBe('U-R/L');
     expect(round('Gara 54 buche', 0).early).toBe('UR-R/L');
-    // 2° giro = clessidra: Early 'U-L/R', Late 'UR-L/R'.
-    expect(round('Gara 54 buche', 1).early).toBe('U-L/R');
-    expect(round('Gara 54 buche', 1).late).toBe('UR-L/R');
+    // 2° giro = SPECULARE del 1°: stessa forma del cerchio + giorno 2 (i blocchi
+    // restano congelati e scambiano Early/Late + Tee, vedi builder 'cerchio').
+    expect(round('Gara 54 buche', 1).early).toBe('UR-R/L');
+    expect(round('Gara 54 buche', 1).late).toBe('U-R/L');
+    expect(round('Gara 54 buche', 1).giorno).toBe(2);
   });
 
   it('Gara Giovanile: 3 blocchi ∩ — uomini Early, donne, uomini Late', () => {
@@ -2143,14 +2124,17 @@ describe('Quadranti a U rovesciata (forma UR) — giovanili / patrocinate', () =
     expect(playerCells(html).slice(0, 3)).toEqual([9, 8, 7]);
   });
 
-  it('Patrocinate 1° giro: resta cerchio (flusso storico, quadranti Q1-Q4)', () => {
+  it('Patrocinate 1° giro: cerchio via MOTORE UNICO (striscia FIG a blocchi)', () => {
     const l = makeLogic({
       garaNT: 'Gara con patrocinio FIG', players: 60, proette: 24,
       playersPerFlight: 3, nominativo: 'Off', compatto: 'Early/Late',
       startTime: '08:00', gap: '00:10', round: '04:30',
     });
-    l.generateDoubleTee('prima');
-    expect(l.figQuadranti.some((q) => q.label === 'Q1')).toBe(true);
+    const html = l.generateDoubleTee('prima');
+    // Ora passa dal renderer unico: striscia FIG con label "Blocco N · Tee X".
+    expect(l.figQuadranti.length).toBeGreaterThan(0);
+    expect(l.figQuadranti.every((q) => /Blocco \d+ · Tee (1|10)/.test(q.label))).toBe(true);
+    expect(html).toContain('<table>');
   });
 
   it('Trofeo Giovanile Federale 2° giro: stesso schema del Patrocinate (4 blocchi)', () => {
@@ -2161,6 +2145,59 @@ describe('Quadranti a U rovesciata (forma UR) — giovanili / patrocinate', () =
     });
     l.generateDoubleTee('seconda');
     expect(l.figQuadranti).toHaveLength(8);
+  });
+
+  // Invariante GIÀ garantito ora: niente giocatore solo, twosome = due voli da 2.
+  it('Gara Giovanile doppie 62M — twosome = due voli da 2 (mai un giocatore solo)', () => {
+    const l = makeLogic({
+      garaNT: 'Gara Giovanile', players: 62, proette: 0, playersPerFlight: 3,
+      nominativo: 'Off', startTime: '08:00', gap: '00:10', round: '04:30',
+    });
+    const html = l.generateDoubleTee('prima');
+    const body = html.split('<tbody>')[1] || '';
+    const flights = body.split('</tr>').map((tr) => {
+      const tm = tr.search(/font-medium"[^>]*>\d{1,2}:\d{2}</);
+      if (tm < 0) return [];
+      return [tr.slice(0, tm), tr.slice(tm)].map((s) =>
+        [...s.matchAll(/border border-gray-300"[^>]*>([^<]*)</g)].map((m) => m[1].trim()).filter((v) => v !== '').length);
+    }).flat();
+    expect(flights.includes(1)).toBe(false);              // mai un volo da 1
+    // difference(62)=1 → un solo volo da 2 (un twosome)
+    expect(flights.filter((n) => n === 2).length).toBe(1);
+  });
+
+  // MOTORE UNICO (buildURQuadrants, §3.1): i due twosome consecutivi in alto-sx
+  // (Q1 = Early Tee 1) e la riga vuota in basso-sx (Q3 = Late Tee 1), tee bilanciati.
+  it('Gara Giovanile doppie 61M — 2 twosome consecutivi alto-sx, vuoto basso-sx', () => {
+    const l = makeLogic({
+      garaNT: 'Gara Giovanile', players: 61, proette: 0, playersPerFlight: 3,
+      nominativo: 'Off', startTime: '08:00', gap: '00:10', round: '04:30',
+    });
+    const html = l.generateDoubleTee('prima');
+    const body = html.split('<tbody>')[1] || '';
+    // Per riga: [voloTee1, voloTee10] come liste di ranghi (celle non vuote).
+    const rows = body.split('</tr>').map((tr) => {
+      const tm = tr.search(/font-medium"[^>]*>\d{1,2}:\d{2}</);
+      if (tm < 0) return null;
+      const cells = (s) => [...s.matchAll(/border border-gray-300"[^>]*>([^<]*)</g)]
+        .map((m) => m[1].trim()).filter((v) => v !== '').map(Number);
+      return [cells(tr.slice(0, tm)), cells(tr.slice(tm))];
+    }).filter(Boolean);
+
+    // I primi due voli Tee 1 sono twosome consecutivi (in alto a sinistra).
+    expect(rows[0][0].length).toBe(2);
+    expect(rows[1][0].length).toBe(2);
+    // Nessun altro twosome (difference=2 → esattamente 2 voli corti, consecutivi).
+    const tee1Short = rows.map((r) => r[0].length).filter((n) => n === 2).length;
+    expect(tee1Short).toBe(2);
+    // L'ULTIMA riga ha Tee 1 vuoto e Tee 10 pieno (riga vuota in basso a sinistra).
+    const last = rows[rows.length - 1];
+    expect(last[0].length).toBe(0);
+    expect(last[1].length).toBe(3);
+    // Tutti i 61 ranghi presenti una volta sola, mai un volo da 1.
+    const all = rows.flatMap((r) => [...r[0], ...r[1]]);
+    expect([...new Set(all)].sort((a, b) => a - b)).toEqual(Array.from({ length: 61 }, (_, i) => i + 1));
+    expect(rows.every((r) => r[0].length !== 1 && r[1].length !== 1)).toBe(true);
   });
 });
 
@@ -2372,14 +2409,14 @@ describe('REGRESSIONE — blocchiBuilders dispatch (layout esplicito vs. derivaz
     expect(r('Prova di gioco',          1).layout).toBe('sessioni-miste');
   });
 
-  it('COMPETITION_FORMATS: giri cerchio/clessidra e finali NON hanno layout esplicito', () => {
+  it('COMPETITION_FORMATS: cerchio/clessidra hanno layout "cerchio"; finale nessun layout', () => {
     const r = (g, i) => COMPETITION_FORMATS[g].rounds[i];
-    // 54 buche: 1°/2° = cerchio/clessidra; finale = isFinaleRound, non entra nel branch
-    expect(r('Gara 54 buche', 0).layout).toBeUndefined();
-    expect(r('Gara 54 buche', 1).layout).toBeUndefined();
-    expect(r('Gara 54 buche', 2).layout).toBeUndefined(); // finale
-    // patrocinate 1° giro = cerchio, nessun layout
-    expect(r('Gara con patrocinio FIG', 0).layout).toBeUndefined();
+    // 54 buche: 1°/2° = cerchio/clessidra → motore unico (layout 'cerchio').
+    expect(r('Gara 54 buche', 0).layout).toBe('cerchio');
+    expect(r('Gara 54 buche', 1).layout).toBe('cerchio');
+    expect(r('Gara 54 buche', 2).layout).toBeUndefined(); // finale: ramo isFinaleRound
+    // patrocinate 1° giro = cerchio.
+    expect(r('Gara con patrocinio FIG', 0).layout).toBe('cerchio');
   });
 
   // ── Unknown layout → throw ────────────────────────────────────────────────
