@@ -156,7 +156,7 @@ describe('REGRESSIONE — invarianti finale per classifica', () => {
   [52, 53, 54, 55].forEach((cut) => {
     it(`Gara 54 finale · tee unico · ${cut} qualificati`, () => {
       const html = mk({
-        garaNT: 'Gara 54 buche', players: 102, proette: 42,
+        garaNT: 'Gara 54 buche', players: 144, proette: 48,
         playersCut: cut, proetteCut: 0, playersPerFlight: 3,
         doppiePartenze: 'Tee Unico', nominativo: 'Off',
         startTime: '08:00', gap: '00:11', round: '04:30',
@@ -165,7 +165,7 @@ describe('REGRESSIONE — invarianti finale per classifica', () => {
     });
     it(`Gara 54 finale · doppio tee · ${cut} qualificati`, () => {
       const html = mk({
-        garaNT: 'Gara 54 buche', players: 102, proette: 42,
+        garaNT: 'Gara 54 buche', players: 144, proette: 48,
         playersCut: cut, proetteCut: 0, playersPerFlight: 3,
         nominativo: 'Off', startTime: '08:00', gap: '00:11', round: '04:30',
       }).generateDoubleTee('finale');

@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Log;
  *
  * Endpoint:
  *   POST /user/federgolf/load-all  → tutte le gare federgolf future dell'anno
+ *                                     (da novembre anche quelle dell'anno dopo)
  *   POST /user/federgolf/iscritti  → iscritti ammessi per una gara
  *
  * Cache 60s per gara_id sugli iscritti (evita rate-limit di federgolf.it).
@@ -33,7 +34,10 @@ class FedergolfController extends Controller
      */
     public function getIscritti(Request $request)
     {
-        $garaId = $request->input('gara_id');
+        // C1: senza validazione un gara_id array/assente produce 500
+        // (Array to string conversion) o chiave cache condivisa.
+        $validated = $request->validate(['gara_id' => 'required|integer']);
+        $garaId = $validated['gara_id'];
 
         $cacheKey = "federgolf.iscritti.{$garaId}";
         $payload = Cache::remember($cacheKey, 60, fn () => $this->fetchIscritti($garaId));
@@ -84,21 +88,50 @@ class FedergolfController extends Controller
         }
 
         $data = $response->json();
+
+        // C2: 200 con corpo non-JSON (manutenzione/WAF federgolf) → json() = null.
+        // Senza questo guard verrebbe classificato 'empty' ("Gara senza iscritti")
+        // e cacheato 60s: dato falso all'utente.
+        if (! is_array($data)) {
+            return [
+                'state' => 'error',
+                'iscritti' => [],
+                'message' => 'Federgolf.it ha risposto in un formato inatteso. Riprovare tra qualche secondo.',
+            ];
+        }
+
         $entries = $data['data']['processedData'] ?? [];
 
         $iscritti = [];
         $totale = count($entries);
         $ammessi = 0;
 
-        foreach ($entries as $entry) {
-            $isAmmesso = isset($entry[8]) && (strpos($entry[8], 'icona-ammesso') !== false || strpos($entry[8], 'icona-wildcard') !== false);
-            if (! $isAmmesso) {
-                continue;
+        // C4: il parsing dipende dalla shape esterna ($entry[8]/$entry[1] stringhe).
+        // Se federgolf cambia formato → TypeError: meglio 'state: error' che un 500.
+        try {
+            foreach ($entries as $entry) {
+                $isAmmesso = isset($entry[8]) && is_string($entry[8])
+                    && (strpos($entry[8], 'icona-ammesso') !== false || strpos($entry[8], 'icona-wildcard') !== false);
+                if (! $isAmmesso) {
+                    continue;
+                }
+                $ammessi++;
+                if (isset($entry[1]) && is_string($entry[1])
+                    && preg_match('/<span class="nome-giocatore">([^<]+)<\/span>/', $entry[1], $matches)) {
+                    $iscritti[] = trim(html_entity_decode($matches[1], ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+                }
             }
-            $ammessi++;
-            if (preg_match('/<span class="nome-giocatore">([^<]+)<\/span>/', $entry[1], $matches)) {
-                $iscritti[] = trim(html_entity_decode($matches[1], ENT_QUOTES | ENT_HTML5, 'UTF-8'));
-            }
+        } catch (\Throwable $e) {
+            Log::warning('Federgolf shape inattesa in getIscritti', [
+                'gara_id' => $garaId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'state' => 'error',
+                'iscritti' => [],
+                'message' => 'Risposta di Federgolf.it in formato inatteso.',
+            ];
         }
 
         if ($totale === 0) {
@@ -126,30 +159,31 @@ class FedergolfController extends Controller
     public function loadAllCompetitions(Request $request)
     {
         try {
-            $response = Http::timeout(30)
-                ->asForm()
-                ->withHeaders([
-                    'User-Agent' => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-                    'Accept' => 'application/json',
-                    'X-Requested-With' => 'XMLHttpRequest',
-                ])
-                ->post(config('services.federgolf.ajax_url'), [
-                    'action' => 'competitions-search',
-                    'tipo' => '',
-                    'keyword' => '',
-                    'anno' => date('Y'),
-                    'mese' => '',
-                ]);
+            $annoCorrente = (int) date('Y');
+            $entries = $this->fetchCompetitionsYear($annoCorrente);
 
-            if (! $response->successful()) {
+            if ($entries === null) {
                 return response()->json(['success' => false, 'message' => 'Errore connessione']);
             }
 
-            $data = $response->json();
+            // C5: la ricerca federgolf è per anno solare. Da novembre in poi si
+            // preparano le gare di gennaio/febbraio: interroghiamo anche anno+1
+            // e uniamo. Se la seconda chiamata fallisce, l'anno corrente basta.
+            if ((int) date('n') >= 11) {
+                $entriesNextYear = $this->fetchCompetitionsYear($annoCorrente + 1);
+                if ($entriesNextYear !== null) {
+                    $entries = array_merge($entries, $entriesNextYear);
+                } else {
+                    Log::warning('Federgolf: caricamento gare anno successivo fallito', [
+                        'anno' => $annoCorrente + 1,
+                    ]);
+                }
+            }
+
             $oggi = new \DateTime;
             $gare = [];
 
-            foreach ($data['data'] ?? [] as $gara) {
+            foreach ($entries as $gara) {
                 if ($gara['annullata'] == 1) {
                     continue;
                 }
@@ -193,5 +227,47 @@ class FedergolfController extends Controller
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()]);
         }
+    }
+
+    /**
+     * Chiama competitions-search per un anno. Ritorna l'array 'data' della
+     * risposta, oppure null su errore rete/HTTP/corpo non-JSON (C2/C5).
+     */
+    protected function fetchCompetitionsYear(int $anno): ?array
+    {
+        try {
+            $response = Http::timeout(30)
+                ->asForm()
+                ->withHeaders([
+                    'User-Agent' => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+                    'Accept' => 'application/json',
+                    'X-Requested-With' => 'XMLHttpRequest',
+                ])
+                ->post(config('services.federgolf.ajax_url'), [
+                    'action' => 'competitions-search',
+                    'tipo' => '',
+                    'keyword' => '',
+                    'anno' => (string) $anno,
+                    'mese' => '',
+                ]);
+        } catch (ConnectionException $e) {
+            Log::warning('Federgolf timeout/connect loadAllCompetitions', [
+                'anno' => $anno,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+
+        if (! $response->successful()) {
+            return null;
+        }
+
+        $data = $response->json();
+        if (! is_array($data) || ! isset($data['data']) || ! is_array($data['data'])) {
+            return null;
+        }
+
+        return $data['data'];
     }
 }

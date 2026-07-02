@@ -104,14 +104,14 @@
                                 <label class="block text-sm font-medium text-gray-700 mb-2">Giocatori Uomini:</label>
                                 <input type="number" id="players"
                                     class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                                    value="144" min="0" max="200">
+                                    value="102" min="0" max="200">
                             </div>
 
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 mb-2">Giocatrici Donne:</label>
                                 <input type="number" id="proette"
                                     class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                                    value="48" min="0" max="100">
+                                    value="42" min="0" max="100">
                             </div>
 
                             {{-- Campi cut FIG (visibili solo se giornata=finale) --}}

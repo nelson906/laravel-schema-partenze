@@ -18,6 +18,22 @@ export const range = (start, end) => {
 };
 
 /**
+ * Escapes HTML special characters for safe insertion as TEXT content.
+ * Escaping minimale & < > (sufficiente per nodi testo; niente entità
+ * sull'apostrofo per non alterare i nomi italiani negli snapshot).
+ *
+ * Serve per i dati di provenienza esterna (nomi/titoli da federgolf.it,
+ * nomi da Excel) interpolati in template string HTML — vedi audit J1.
+ *
+ * @param {*} value - Value to escape (non-strings are stringified)
+ * @returns {string} Escaped string
+ */
+export const escapeHtml = (value) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;');
+
+/**
  * Converts total minutes to HH:MM format
  * @param {number} totalMinutes - Total minutes
  * @returns {string} Time in HH:MM format

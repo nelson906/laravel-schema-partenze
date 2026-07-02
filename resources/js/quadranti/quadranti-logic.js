@@ -20,7 +20,8 @@ import {
     halfTime,
     storage,
     formatDate,
-    chunkArray
+    chunkArray,
+    escapeHtml
 } from './utils.js';
 
 /**
@@ -1158,7 +1159,8 @@ export class QuadrantiLogic {
             const btn = showRemove
                 ? ` <button type="button" class="qd-remove excludeThisClass ml-1 text-xs text-red-600 hover:text-red-800" data-cat="${group.category}" data-idx="${idx}" title="Rimuovi iscritto e ridisegna lo schema">&times;</button>`
                 : '';
-            return `<td class="text-center px-2 py-1 border border-gray-300" style="color: ${color}">${player}${btn}</td>`;
+            // escapeHtml: nomi da fonti esterne (federgolf/Excel) — audit J1
+            return `<td class="text-center px-2 py-1 border border-gray-300" style="color: ${color}">${escapeHtml(player)}${btn}</td>`;
         };
 
         const maxGroups = Math.max(leftGroups.length, rightGroups.length);
@@ -1564,7 +1566,7 @@ export class QuadrantiLogic {
                   <td style="${td} font-weight:600;">${g2 ? g2.match : '—'}</td>
                   <td style="${td}">${g2 ? g2.ora : '—'}</td>
                   <td style="${td}">${g2 ? g2.tee : '—'}</td>
-                  <td style="${td} text-align:left;">${r.giocatori.join('<br>')}</td>
+                  <td style="${td} text-align:left;">${r.giocatori.map(escapeHtml).join('<br>')}</td>
                 </tr>`;
             });
 
@@ -1768,7 +1770,8 @@ export class QuadrantiLogic {
             for (let j = 0; j < mod; j++) {
                 const player = group.players[j] || '';
                 const style = group.category === 'F' ? 'style="font-style:italic; color:red"' : '';
-                let cellContent = player;
+                // escapeHtml: nomi da fonti esterne (federgolf/Excel) — audit J1
+                let cellContent = escapeHtml(player);
                 if (showRemove && player !== '') {
                     const idx = group.playerIndices ? group.playerIndices[j] : '';
                     cellContent += ` <button type="button" class="qd-remove excludeThisClass ml-1 text-xs text-red-600 hover:text-red-800" data-cat="${group.category}" data-idx="${idx}" title="Rimuovi iscritto e ridisegna lo schema">&times;</button>`;

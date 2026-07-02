@@ -27,6 +27,7 @@ import {
   debounce,
   formatDate,
   storage,
+  escapeHtml,
 } from './utils.js';
 
 // ─── range ───────────────────────────────────────────────────────────────────
@@ -216,5 +217,30 @@ describe('storage', () => {
     storage.clear();
     expect(storage.get('a', null)).toBeNull();
     expect(storage.get('b', null)).toBeNull();
+  });
+});
+
+// ─── escapeHtml (audit J1: dati esterni federgolf/Excel nel DOM) ─────────────
+describe('escapeHtml', () => {
+  it('neutralizza markup HTML', () => {
+    expect(escapeHtml('<img src=x onerror=alert(1)>'))
+      .toBe('&lt;img src=x onerror=alert(1)&gt;');
+  });
+
+  it('escapa & (evita doppie entità al secondo giro di decode)', () => {
+    expect(escapeHtml('Rossi & Bianchi')).toBe('Rossi &amp; Bianchi');
+  });
+
+  it('non altera nomi italiani con apostrofi e accenti', () => {
+    expect(escapeHtml("D'Angelo Nicolò")).toBe("D'Angelo Nicolò");
+  });
+
+  it('stringifica numeri (modalità numerica quadranti)', () => {
+    expect(escapeHtml(42)).toBe('42');
+  });
+
+  it('null/undefined diventano stringa vuota', () => {
+    expect(escapeHtml(null)).toBe('');
+    expect(escapeHtml(undefined)).toBe('');
   });
 });

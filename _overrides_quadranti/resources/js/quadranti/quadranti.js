@@ -15,7 +15,8 @@ import {
   formatDate,
   addTime,
   halfTime,
-  debounce
+  debounce,
+  escapeHtml
 } from './utils.js';
 
 import { QuadrantiLogic, mergeFedergolfResponses, normalizeGaraTitle } from './quadranti-logic.js';
@@ -880,9 +881,10 @@ populateFedergolfDropdown(gare) {
       return { label, maschile: g.maschile, femminile: g.femminile };
     });
 
-  // 3. Popola le option (value = indice nell'array)
+  // 3. Popola le option (value = indice nell'array).
+  //    escapeHtml: titolo/club arrivano dal JSON di federgolf.it — audit J1.
   this.federgolfGare.forEach((g, idx) => {
-    $dropdown.append(`<option value="${idx}">${g.label}</option>`);
+    $dropdown.append(`<option value="${idx}">${escapeHtml(g.label)}</option>`);
   });
 
   $('#federgolf-container').show();
