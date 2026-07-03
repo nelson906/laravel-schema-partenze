@@ -19,11 +19,7 @@ import {
   formatMinutes,
   addTime,
   halfTime,
-  isBetween,
   chunkArray,
-  isValidTime,
-  timeDifferenceInMinutes,
-  deepClone,
   debounce,
   formatDate,
   storage,
@@ -86,20 +82,6 @@ describe('halfTime', () => {
   });
 });
 
-// ─── isBetween ───────────────────────────────────────────────────────────────
-describe('isBetween', () => {
-  it('restituisce true se n è compreso tra a e b', () => {
-    expect(isBetween(5, 1, 10)).toBe(true);
-    expect(isBetween(1, 1, 10)).toBe(true);  // estremo inferiore
-    expect(isBetween(10, 1, 10)).toBe(true); // estremo superiore
-  });
-
-  it('restituisce false se n è fuori range', () => {
-    expect(isBetween(0, 1, 10)).toBe(false);
-    expect(isBetween(11, 1, 10)).toBe(false);
-  });
-});
-
 // ─── chunkArray ──────────────────────────────────────────────────────────────
 describe('chunkArray', () => {
   it('divide array in chunk uguali', () => {
@@ -112,56 +94,6 @@ describe('chunkArray', () => {
 
   it('array vuoto restituisce array vuoto', () => {
     expect(chunkArray([], 3)).toEqual([]);
-  });
-});
-
-// ─── isValidTime ─────────────────────────────────────────────────────────────
-describe('isValidTime', () => {
-  it('accetta orari HH:MM validi', () => {
-    expect(isValidTime('08:00')).toBe(true);
-    expect(isValidTime('23:59')).toBe(true);
-    expect(isValidTime('0:00')).toBe(true);
-  });
-
-  it('rifiuta formati non validi', () => {
-    expect(isValidTime('25:00')).toBe(false);
-    expect(isValidTime('08:60')).toBe(false);
-    expect(isValidTime('8:5')).toBe(false);
-    expect(isValidTime('abcd')).toBe(false);
-    expect(isValidTime('')).toBe(false);
-  });
-});
-
-// ─── timeDifferenceInMinutes ─────────────────────────────────────────────────
-describe('timeDifferenceInMinutes', () => {
-  it('calcola differenza in minuti', () => {
-    expect(timeDifferenceInMinutes('08:00', '09:30')).toBe(90);
-    expect(timeDifferenceInMinutes('07:45', '08:00')).toBe(15);
-  });
-
-  it('restituisce negativo se endTime < startTime', () => {
-    expect(timeDifferenceInMinutes('10:00', '08:00')).toBe(-120);
-  });
-
-  it('restituisce 0 se orari uguali', () => {
-    expect(timeDifferenceInMinutes('08:00', '08:00')).toBe(0);
-  });
-});
-
-// ─── deepClone ───────────────────────────────────────────────────────────────
-describe('deepClone', () => {
-  it('clona oggetti annidati', () => {
-    const original = { a: 1, b: { c: 2 } };
-    const clone = deepClone(original);
-    clone.b.c = 99;
-    expect(original.b.c).toBe(2);
-  });
-
-  it('clona array', () => {
-    const original = [1, [2, 3]];
-    const clone = deepClone(original);
-    clone[1][0] = 99;
-    expect(original[1][0]).toBe(2);
   });
 });
 

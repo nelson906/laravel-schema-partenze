@@ -141,9 +141,11 @@ Il box riepilogativo in cima alla tabella (`infoHTML`) mostra:
 
 ---
 
-## 5. Giorno 2 (`dayNumber = 2`) — remap
+## 5. Giorno 2 — remap
 
-`remapQuadrant`:
+Rotazione speculare implementata dalla closure `remap()` in `quadranti-logic.js`
+(scambio strutturale `early.tee1 ↔ late.tee10`, `early.tee10 ↔ late.tee1`).
+Equivalente concettuale:
 
 ```
 Q1 ↔ Q4    (Early Tee1   ↔ Late Tee10)
@@ -177,16 +179,11 @@ concatenazione di `generatePlayerGroups`.
 
 ---
 
-## 7. Limiti tecnici (`config.js → TECHNICAL_LIMITS`)
+## 7. Limiti tecnici
 
-```
-maxMenDoubleTee       = 36   // soglia "tipica" per uomini in doppio tee
-maxWomenDoubleTee     = 18
-maxSingleTeeRecommended = 93
-minSingleTeeMandatory   = 78
-```
-
-Oggi questi limiti sono solo informativi: non bloccano la generazione, servono come riferimento documentale.
+Riferimento documentale (non applicati in codice): max uomini doppio tee 36,
+max donne doppio tee 18, tee unico raccomandato ≤ 93, tee unico obbligatorio da 78.
+(La costante `TECHNICAL_LIMITS` è stata rimossa perché mai usata — audit 2026-07-02.)
 
 L'unico limite UI applicato è `toggleCompactOption()`: l'opzione "Modalità compatto" viene mostrata solo se `players + proette ≤ mod * 32`.
 

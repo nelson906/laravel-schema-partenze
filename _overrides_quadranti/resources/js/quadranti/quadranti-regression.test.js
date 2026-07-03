@@ -173,3 +173,94 @@ describe('REGRESSIONE — invarianti finale per classifica', () => {
     });
   });
 });
+
+// ─── Prova di gioco: TEE UNICO giri 1-2 (abilitato 02/07/2026) ────────────────
+// Nessun PDF dedicato → logica 54 buche (direttiva STORICO.md), coerente con
+// la rotazione earlyHalf del doppio tee: 1° giro apre la metà BASSA dei
+// ranghi (earlyHalf 'bassa'), 2° giro apre la metà ALTA (earlyHalf 'alta').
+describe('REGRESSIONE — Prova di gioco tee unico giri 1-2', () => {
+  beforeEach(reset);
+  const base = {
+    garaNT: 'Prova di gioco', proette: 0, playersPerFlight: 3,
+    doppiePartenze: 'Tee Unico', nominativo: 'Off',
+    startTime: '08:00', gap: '00:10', round: '04:30',
+  };
+
+  [130, 131, 132].forEach((players) => {
+    ['prima', 'seconda'].forEach((round) => {
+      it(`Prova di gioco · ${round} · tee unico · ${players}U`, () => {
+        const html = mk({ ...base, players }).generateSingleTee(round);
+        checkInvariants(html, { players, proette: 0, internal: ASC });
+      });
+    });
+  });
+
+  it('rotazione tra giri: 1° apre metà bassa, 2° apre metà alta (132U)', () => {
+    const g1 = parseFlights(mk({ ...base, players: 132 }).generateSingleTee('prima'), 3);
+    const g2 = parseFlights(mk({ ...base, players: 132 }).generateSingleTee('seconda'), 3);
+    const meta = 66; // 132 mod 3: limit2 = 66, nessuna difference
+    expect(Math.max(...g1[0].ranks)).toBeLessThanOrEqual(meta);
+    expect(Math.min(...g1[g1.length - 1].ranks)).toBeGreaterThan(meta);
+    expect(Math.min(...g2[0].ranks)).toBeGreaterThan(meta);
+    expect(Math.max(...g2[g2.length - 1].ranks)).toBeLessThanOrEqual(meta);
+  });
+});
+
+// ─── Flight da 2 giocatori (opzione UI aggiunta 02/07/2026) ──────────────────
+// Con mod 2 il campo DEVE essere PARI: il "volo corto" da mod-1 = 1 giocatore
+// solo violerebbe I1 (un giocatore non gioca mai da solo). La UI non lo
+// impedisce: responsabilità dell'utente. Qui si testano solo campi pari.
+describe('REGRESSIONE — flight da 2 giocatori (campi pari)', () => {
+  beforeEach(reset);
+  const MOD2 = { mod: 2 };
+  [56, 58, 60].forEach((players) => {
+    it(`Gara 54 · prima · doppio tee · mod 2 · ${players}U`, () => {
+      const html = mk({
+        garaNT: 'Gara 54 buche', players, proette: 0, playersPerFlight: 2,
+        nominativo: 'Off', startTime: '08:00', gap: '00:10', round: '04:30',
+      }).generateDoubleTee('prima');
+      checkInvariants(html, { players, proette: 0, ...MOD2, internal: ASC });
+    });
+    it(`Gara 54 · prima · tee unico · mod 2 · ${players}U`, () => {
+      const html = mk({
+        garaNT: 'Gara 54 buche', players, proette: 0, playersPerFlight: 2,
+        doppiePartenze: 'Tee Unico', nominativo: 'Off',
+        startTime: '08:00', gap: '00:10', round: '04:30',
+      }).generateSingleTee('prima');
+      checkInvariants(html, { players, proette: 0, ...MOD2, internal: ASC });
+    });
+  });
+
+  it('bilanciaQuadranti: mod 2 SENZA regola speciale (split naturale), storico mod 3/4 invariato', () => {
+    const l = mk({});
+    // mod 2, 33 giocatori: 17 match → 5/4/4/4 NATURALE (Early 9 / Late 8).
+    // La regola speciale Q3→Q2 NON si applica a mod 2: darebbe 10/7
+    // (segnalato da Alberto 02/07/2026).
+    expect(l.bilanciaQuadranti(33, 2)).toEqual({ Q1: 5, Q2: 4, Q3: 4, Q4: 4 });
+    // mod 3, 61 giocatori: 21 match → 6/5/5/5 + rem12=1 → {6,6,4,5} (storico)
+    expect(l.bilanciaQuadranti(61, 3)).toEqual({ Q1: 6, Q2: 6, Q3: 4, Q4: 5 });
+    // mod 4, 65 giocatori: 17 match → 5/4/4/4 + rem16=1 → {5,5,3,4} (storico)
+    expect(l.bilanciaQuadranti(65, 4)).toEqual({ Q1: 5, Q2: 5, Q3: 3, Q4: 4 });
+  });
+
+  it('mod 2, 33 giocatori: split sezioni 9/8 (limit2 = 17), non 10/7', () => {
+    const lim = mk({}).limitiQuadranti(33, 2);
+    expect(lim.limit2).toBe(17);       // sezione bassa 1..17 → 9 voli
+    expect(lim.difference).toBe(1);    // 1 volo corto (campo dispari)
+    // tee unico Prova di gioco 1° giro: 9 voli metà bassa + 8 metà alta
+    const html = mk({
+      garaNT: 'Prova di gioco', players: 33, proette: 0, playersPerFlight: 2,
+      doppiePartenze: 'Tee Unico', nominativo: 'Off',
+      startTime: '09:00', gap: '00:09', round: '04:30',
+    }).generateSingleTee('prima');
+    const flights = parseFlights(html, 2);
+    expect(flights.length).toBe(17);
+    const bassi = flights.filter((f) => Math.max(...f.ranks) <= 17);
+    const alti  = flights.filter((f) => Math.min(...f.ranks) >= 18);
+    expect(bassi.length).toBe(9);
+    expect(alti.length).toBe(8);
+    // I2: tutti i ranghi 1..33 presenti una volta sola
+    const all = flights.flatMap((f) => f.ranks).sort((a, b) => a - b);
+    expect(all).toEqual(Array.from({ length: 33 }, (_, i) => i + 1));
+  });
+});

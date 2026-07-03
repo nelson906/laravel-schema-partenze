@@ -79,17 +79,6 @@ export const halfTime = (duration) => {
 };
 
 /**
- * Checks if a number is between two values (inclusive)
- * @param {number} n - Number to check
- * @param {number} a - Lower bound
- * @param {number} b - Upper bound
- * @returns {boolean} True if n is between a and b
- */
-export const isBetween = (n, a, b) => {
-  return (n - a) * (n - b) <= 0;
-};
-
-/**
  * Splits an array into chunks of specified size
  * @param {Array} array - Array to split
  * @param {number} chunkSize - Size of each chunk
@@ -198,37 +187,3 @@ export const debounce = (func, wait) => {
   };
 };
 
-/**
- * Deep clones an object
- * @param {Object} obj - Object to clone
- * @returns {Object} Cloned object
- */
-export const deepClone = (obj) => {
-  return JSON.parse(JSON.stringify(obj));
-};
-
-/**
- * Validates if a time string is in HH:MM format
- * @param {string} time - Time string to validate
- * @returns {boolean} True if valid HH:MM format
- */
-export const isValidTime = (time) => {
-  const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
-  return timeRegex.test(time);
-};
-
-/**
- * Calculates the difference between two times in minutes
- * @param {string} startTime - Start time in HH:MM format
- * @param {string} endTime - End time in HH:MM format
- * @returns {number} Difference in minutes
- */
-export const timeDifferenceInMinutes = (startTime, endTime) => {
-  const [startHours, startMinutes] = startTime.split(':').map(Number);
-  const [endHours, endMinutes] = endTime.split(':').map(Number);
-  
-  const startTotalMinutes = startHours * 60 + startMinutes;
-  const endTotalMinutes = endHours * 60 + endMinutes;
-  
-  return endTotalMinutes - startTotalMinutes;
-};

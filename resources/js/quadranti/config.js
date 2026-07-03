@@ -228,6 +228,12 @@ export const COMPETITION_FORMATS = {
   // Giri 3-4 (ordine di classifica, TEE UNICO): coppie (flight da 2) in
   // classifica INVERSA — match 1 = 52·51 … match 26 = 2·1 — con pausa extra
   // di 5' ogni 8 match (Appendice F: 08:26→08:39, 09:35→09:48 con gap 8').
+  //
+  // TEE UNICO giri 1-2 (abilitato 02/07/2026): nessun PDF dedicato → segue la
+  // logica del 54 buche (direttiva in STORICO.md), coerente con la rotazione
+  // earlyHalf del doppio tee: 1° giro apre la metà BASSA dei ranghi
+  // (earlyHalf 'bassa' → lowLeads), 2° giro apre la metà ALTA
+  // (earlyHalf 'alta' → highLeads). Ordine interno crescente (merito).
   'Prova di gioco': {
     label: 'Prova di gioco Scuola Nazionale Professionisti',
     cutAfter: 2,
@@ -235,8 +241,8 @@ export const COMPETITION_FORMATS = {
     // Taglio fisso (non tabella FIG): 52 qualificati ai giri 3-4.
     cutFixed: { players: 52, proette: 0 },
     rounds: [
-      { id: 'prima',   label: '1° giro (ordine di merito)',     type: 'qualifying', gender: 'men', tee: ['double'], early: 'UR-R/L', late: 'S-R/L',  earlyHalf: 'bassa', reversed: false, layout: 'sessioni-miste' },
-      { id: 'seconda', label: '2° giro (ordine di merito)',     type: 'qualifying', gender: 'men', tee: ['double'], early: 'S-L/R',  late: 'UR-L/R', earlyHalf: 'alta',  reversed: false, layout: 'sessioni-miste' },
+      { id: 'prima',   label: '1° giro (ordine di merito)',     type: 'qualifying', gender: 'men', tee: ['double', 'single'], early: 'UR-R/L', late: 'S-R/L',  earlyHalf: 'bassa', reversed: false, layout: 'sessioni-miste' },
+      { id: 'seconda', label: '2° giro (ordine di merito)',     type: 'qualifying', gender: 'men', tee: ['double', 'single'], early: 'S-L/R',  late: 'UR-L/R', earlyHalf: 'alta',  reversed: false, layout: 'sessioni-miste' },
       { id: 'terzo',   label: '3° giro (classifica, Tee 1)',    type: 'finale',     gender: 'men', tee: ['single'], coppie: { mod: 2, pausaOgni: 8, pausaExtra: '00:05' } },
       { id: 'quarto',  label: '4° giro (classifica, Tee 1)',    type: 'finale',     gender: 'men', tee: ['single'], coppie: { mod: 2, pausaOgni: 8, pausaExtra: '00:05' } }
     ]
@@ -258,14 +264,6 @@ export const TABLE_COLORS = {
     lightGray: '#e7e6e6',
     yellow: '#ffff00'
   }
-};
-
-// Limits for Technical Rules
-export const TECHNICAL_LIMITS = {
-  maxMenDoubleTee: 36,
-  maxWomenDoubleTee: 18,
-  maxSingleTeeRecommended: 93,
-  minSingleTeeMandatory: 78
 };
 
 // Datepicker Italian localization

@@ -269,9 +269,10 @@ class QuadrantiApp {
   /**
    * Vincola la variante tee a quelle ammesse dal giro corrente
    * (roundDesc.tee in COMPETITION_FORMATS). Es. Prova di gioco: giri 1-2
-   * solo doppio tee, giri 3-4 solo tee unico. Se la variante corrente non è
-   * ammessa passa alla prima ammessa; il select #doppie_partenze viene
-   * disabilitato quando il giro ne ammette una sola.
+   * doppio tee o tee unico (logica 54 buche), giri 3-4 solo tee unico.
+   * Se la variante corrente non è ammessa passa alla prima ammessa; il
+   * select #doppie_partenze viene disabilitato quando il giro ne ammette
+   * una sola.
    */
   enforceTeeVariant() {
     const fmt = COMPETITION_FORMATS[this.config.garaNT];

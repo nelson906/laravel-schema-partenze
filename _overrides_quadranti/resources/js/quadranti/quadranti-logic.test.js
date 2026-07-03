@@ -29,7 +29,7 @@ function resetPlayerStorage() {
 }
 
 // QuadrantiLogic richiede jQuery solo per metodi DOM (initializeDatepicker, fetchEphemerisData).
-// I metodi di pura logica (bilanciaQuadranti, limitiQuadranti, remapQuadrant,
+// I metodi di pura logica (bilanciaQuadranti, limitiQuadranti,
 // generatePlayerGroups, getPlayerArrays) non usano jQuery e sono testabili direttamente.
 
 function makeLogic(overrides = {}) {
@@ -125,40 +125,6 @@ describe('limitiQuadranti', () => {
       const result = logic.limitiQuadranti(n, 3);
       expect(result.difference).toBeGreaterThanOrEqual(0);
     });
-  });
-});
-
-// ─── remapQuadrant ───────────────────────────────────────────────────────────
-describe('remapQuadrant', () => {
-  let logic;
-  beforeEach(() => { logic = makeLogic(); });
-
-  it('giorno 1: quadrante invariato', () => {
-    ['Q1', 'Q2', 'Q3', 'Q4'].forEach(q => {
-      expect(logic.remapQuadrant(q, 1)).toBe(q);
-    });
-  });
-
-  it('giorno 2: rotazione Q1→Q4, Q2→Q3, Q3→Q1, Q4→Q2', () => {
-    expect(logic.remapQuadrant('Q1', 2)).toBe('Q4');
-    expect(logic.remapQuadrant('Q2', 2)).toBe('Q3');
-    expect(logic.remapQuadrant('Q3', 2)).toBe('Q1');
-    expect(logic.remapQuadrant('Q4', 2)).toBe('Q2');
-  });
-
-  it('4 rotazioni successive giorno 2 → ritorna al quadrante originale (ciclo a 4)', () => {
-    // La mappatura è un ciclo: Q1→Q4→Q2→Q3→Q1, non una doppia inversione
-    ['Q1', 'Q2', 'Q3', 'Q4'].forEach(q => {
-      let current = q;
-      for (let i = 0; i < 4; i++) {
-        current = logic.remapQuadrant(current, 2);
-      }
-      expect(current).toBe(q);
-    });
-  });
-
-  it('quadrante sconosciuto viene restituito invariato', () => {
-    expect(logic.remapQuadrant('QX', 2)).toBe('QX');
   });
 });
 
@@ -2300,8 +2266,10 @@ describe('Prova di gioco SNP — Appendice F', () => {
     expect(f.rounds[1].early).toBe('S-L/R');
     expect(f.rounds[1].late).toBe('UR-L/R');
     expect(f.rounds[1].earlyHalf).toBe('alta');
-    // Giri 1-2 solo doppio tee; giri 3-4 solo tee unico, a coppie.
-    expect(f.rounds[0].tee).toEqual(['double']);
+    // Giri 1-2: doppio tee + tee unico (dal 02/07/2026, logica 54 buche);
+    // giri 3-4 solo tee unico, a coppie.
+    expect(f.rounds[0].tee).toEqual(['double', 'single']);
+    expect(f.rounds[1].tee).toEqual(['double', 'single']);
     expect(f.rounds[2].tee).toEqual(['single']);
     expect(f.rounds[2].coppie).toEqual({ mod: 2, pausaOgni: 8, pausaExtra: '00:05' });
     expect(f.rounds[3].coppie).toEqual({ mod: 2, pausaOgni: 8, pausaExtra: '00:05' });
