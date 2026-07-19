@@ -1,0 +1,95 @@
+{
+    // Infection — mutation testing (vedi deep-test-report-2026-07-19.md).
+    // Esegue automaticamente l'analisi "mutanti sopravvissuti" fatta a mano
+    // nel deep-test: ogni mutante sopravvissuto = test cieco da rinforzare.
+    //
+    // Prerequisito: coverage driver. Con MAMP si usa Xdebug (pecl/pcov non
+    // funziona con MAMP): prefissare i comandi con XDEBUG_MODE=coverage.
+    // Prima run:   XDEBUG_MODE=coverage vendor/bin/infection --threads=max --show-mutations
+    // Incrementale: XDEBUG_MODE=coverage vendor/bin/infection --threads=max --git-diff-filter=AM --git-diff-base=main
+    "$schema": "vendor/infection/infection/resources/schema.json",
+
+    "source": {
+        // Solo il core dei calcoli: mutare controller/view è rumore.
+        // Estendere gradualmente quando l'MSI di Services è sotto controllo.
+        "directories": [
+            "app"
+        ],
+        // Esclusi 2026-07-19: file di sola introspezione ambiente/server.
+        // SystemInfo legge ini_get/fileperms/disk_*: mutanti non uccidibili
+        // senza mock del filesystem — rumore puro (45 escaped alla run).
+        // ArubaToolsController: tooling manutenzione hosting, idem (9 escaped).
+        "excludes": [
+            "Helpers/SystemInfo.php",
+            "Http/Controllers/SuperAdmin/ArubaToolsController.php"
+        ]
+    },
+
+    // Timeout per mutante. I mutanti coperti SOLO da test più lenti del
+    // timeout vengono saltati (S — alla prima run 2026-07-19: 2601 skipped).
+    // Per una "deep run" periodica che li includa: --timeout=180 da CLI
+    // (durata run molto maggiore).
+    "timeout": 45,
+
+    "logs": {
+        "text": "storage/logs/infection.log",
+        "summary": "storage/logs/infection-summary.log",
+        // HTML navigabile con i diff dei mutanti:
+        "html": "storage/logs/infection.html"
+    },
+
+    "mutators": {
+        "@default": true,
+        // protected→private: rumore puro, nessun service ha sottoclassi.
+        "ProtectedVisibility": false,
+        // Rumore: mutazioni che toccano SOLO il logging (safeLog / Log::*)
+        // non alterano i calcoli — ignorarle alza il rapporto segnale/rumore.
+        "MethodCallRemoval": {
+            "ignoreSourceCodeByRegex": [
+                ".*safeLog\\(.*",
+                ".*Log::(warning|error|info|debug)\\(.*"
+            ]
+        },
+        "ArrayItemRemoval": {
+            "ignoreSourceCodeByRegex": [
+                ".*'key' => \\$key.*",
+                ".*'raw' => \\$value.*",
+                ".*'type' => get_debug_type.*",
+                ".*'input'\\s*=> \\$input.*",
+                ".*'token_count' => count.*",
+                ".*'last_token' => end.*",
+                // Header HTTP verso federgolf.it: rimuoverli non è osservabile
+                // dai test (Http::fake non valida gli header) — rumore.
+                ".*'User-Agent' =>.*",
+                ".*'Accept' =>.*",
+                ".*'X-Requested-With' =>.*"
+            ]
+        },
+        // Plumbing HTTP: timeout(60)→61, connectTimeout(10)→9, page_size
+        // 250→249 ecc. non osservabili con Http::fake — rumore puro.
+        "IncrementInteger": {
+            "ignoreSourceCodeByRegex": [
+                ".*->timeout\\(.*",
+                ".*->connectTimeout\\(.*",
+                ".*'page_size' => .*",
+                ".*'page_number' => .*",
+                ".*Cache::remember\\(.*"
+            ]
+        },
+        "DecrementInteger": {
+            "ignoreSourceCodeByRegex": [
+                ".*->timeout\\(.*",
+                ".*->connectTimeout\\(.*",
+                ".*'page_size' => .*",
+                ".*'page_number' => .*",
+                ".*Cache::remember\\(.*"
+            ]
+        }
+    },
+
+    // RATCHET: baseline 2026-07-19 run 1 = 53.41%, run 2 = 58.58% → soglie a 55.
+    // Alzare di ~5 punti ogni volta che vengono superate stabilmente.
+    // Obiettivo di medio periodo: 75+ su app/Services.
+    "minMsi": 55,
+    "minCoveredMsi": 55
+}
