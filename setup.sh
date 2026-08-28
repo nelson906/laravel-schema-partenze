@@ -83,6 +83,13 @@ cp -R "$OVERRIDES/routes/."               "$ROOT/routes/"
 cp -R "$OVERRIDES/resources/."            "$ROOT/resources/"
 cp    "$OVERRIDES/vite.config.js"         "$ROOT/vite.config.js"
 cp    "$OVERRIDES/vitest.config.js"       "$ROOT/vitest.config.js"
+# Test PHP dei moduli mirrorati (FedergolfTest, QuadrantiTest): senza questa
+# riga viaggiava il codice ma non i test che lo proteggono.
+# NB: `if`, non `[ ... ] && cp`: con `set -e` un test falso farebbe uscire
+# l'intero script.
+if [ -d "$OVERRIDES/tests" ]; then
+    cp -R "$OVERRIDES/tests/." "$ROOT/tests/"
+fi
 
 # ─── STEP 5: patch routes/web.php (require quadranti.php) ────────────────
 echo ""
@@ -155,7 +162,7 @@ if ! npm ls vitest >/dev/null 2>&1; then
 fi
 
 echo ""
-echo "▶ Esecuzione test vitest (atteso: 127/127)"
+echo "▶ Esecuzione test vitest"
 npx vitest run || { echo "✗ Test falliti — controlla output"; exit 1; }
 
 echo ""

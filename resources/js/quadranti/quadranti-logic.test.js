@@ -17,7 +17,7 @@ beforeAll(() => {
   vi.stubGlobal('localStorage', localStorageMock);
 });
 
-import { QuadrantiLogic, mergeFedergolfResponses, normalizeGaraTitle } from './quadranti-logic.js';
+import { QuadrantiLogic, mergeFedergolfResponses, normalizeGaraTitle, describeAjaxFailure } from './quadranti-logic.js';
 import { DEFAULT_CONFIG, COMPETITION_FORMATS, parseForma } from './config.js';
 import { storage } from './utils.js';
 
@@ -466,6 +466,59 @@ describe('mergeFedergolfResponses (state-based)', () => {
         maschileResponse: { state: 'ready' },
       });
       expect(result.atleti).toEqual([]);
+    });
+
+    it('stato unpublished → warning informativo con message del backend', () => {
+      const result = mergeFedergolfResponses({
+        maschileResponse: {
+          state: 'unpublished',
+          iscritti: [],
+          message: 'Lista iscritti non ancora pubblicata su Federgolf.it per questa gara.',
+        },
+      });
+      expect(result.atleti).toEqual([]);
+      expect(result.warnings[0]).toContain('non ancora pubblicata');
+      expect(result.severity).toBe('info');
+    });
+
+    it('stato not_found → severity error', () => {
+      const result = mergeFedergolfResponses({
+        maschileResponse: { state: 'not_found', iscritti: [], message: 'Gara non trovata.' },
+      });
+      expect(result.severity).toBe('error');
+      expect(result.warnings[0]).toContain('Gara non trovata');
+    });
+
+    it('open senza message → usa il fallback, non stringhe vuote', () => {
+      const result = mergeFedergolfResponses({
+        femminileResponse: { state: 'open', iscritti: [] },
+      });
+      expect(result.warnings[0]).toContain('non ancora chiuse');
+    });
+
+    it('severity: open+error insieme → error (prevale il guasto)', () => {
+      const result = mergeFedergolfResponses({
+        maschileResponse: { state: 'open', iscritti: [], message: 'Iscrizioni non ancora chiuse' },
+        femminileResponse: { state: 'error', iscritti: [], message: 'timeout' },
+      });
+      expect(result.severity).toBe('error');
+      expect(result.warnings).toHaveLength(2);
+    });
+
+    it('severity: solo stati informativi → info', () => {
+      const result = mergeFedergolfResponses({
+        maschileResponse: { state: 'open', iscritti: [], message: 'Iscrizioni non ancora chiuse' },
+        femminileResponse: { state: 'empty', iscritti: [], message: 'Nessun iscritto' },
+      });
+      expect(result.severity).toBe('info');
+    });
+
+    it('tutto ready → severity null', () => {
+      const result = mergeFedergolfResponses({
+        maschileResponse: { state: 'ready', iscritti: ['Tom'] },
+      });
+      expect(result.severity).toBeNull();
+      expect(result.states.maschile).toBe('ready');
     });
 
     it('arrays indipendenti: 50M+15F finiscono in slot distinti', () => {
@@ -2494,5 +2547,80 @@ describe('REGRESSIONE — blocchiBuilders dispatch (layout esplicito vs. derivaz
     } finally {
       round0.layout = origLayout;
     }
+  });
+});
+
+// ─── describeAjaxFailure: classificazione dei fallimenti HTTP ────────────────
+// Prima ogni rigetto di $.ajax diventava "Errore di rete nel caricamento degli
+// iscritti", anche con la rete perfettamente funzionante (sessione scaduta,
+// 500 applicativo, validazione). Qui verifichiamo che ogni causa abbia il suo
+// messaggio.
+describe('describeAjaxFailure', () => {
+  it('abort → nessun messaggio (silenzioso)', () => {
+    const { message } = describeAjaxFailure({ status: 0 }, 'abort');
+    expect(message).toBeNull();
+  });
+
+  it('timeout → messaggio di attesa scaduta, non "errore di rete"', () => {
+    const { message } = describeAjaxFailure({ status: 0 }, 'timeout', 'degli iscritti');
+    expect(message).toContain('tempo massimo');
+    expect(message).toContain('degli iscritti');
+  });
+
+  it('status 0 → unico caso di vera assenza di risposta', () => {
+    const { message } = describeAjaxFailure({ status: 0 }, 'error');
+    expect(message).toContain('Nessuna risposta dal server');
+  });
+
+  it('419 → sessione scaduta, suggerisce F5', () => {
+    const { message } = describeAjaxFailure({ status: 419 }, 'error');
+    expect(message).toContain('Sessione scaduta');
+    expect(message).toContain('F5');
+  });
+
+  it('401 e 403 → invito a rifare il login', () => {
+    expect(describeAjaxFailure({ status: 401 }, 'error').message).toContain('login');
+    expect(describeAjaxFailure({ status: 403 }, 'error').message).toContain('login');
+  });
+
+  it('404 → problema di route, non di rete', () => {
+    expect(describeAjaxFailure({ status: 404 }, 'error').message).toContain('route');
+  });
+
+  it('422 → riporta i dettagli di validazione Laravel', () => {
+    const { message } = describeAjaxFailure({
+      status: 422,
+      responseJSON: { errors: { gara_id: ['Il campo gara id deve essere un numero intero.'] } },
+    }, 'error');
+    expect(message).toContain('numero intero');
+  });
+
+  it('422 senza dettagli → messaggio comunque comprensibile', () => {
+    const { message } = describeAjaxFailure({ status: 422 }, 'error');
+    expect(message).toContain('Richiesta non valida');
+  });
+
+  it('429 → rate limit', () => {
+    expect(describeAjaxFailure({ status: 429 }, 'error').message).toContain('Troppe richieste');
+  });
+
+  it('500 → indica il log applicativo e riporta il message del backend', () => {
+    const { message } = describeAjaxFailure({
+      status: 500,
+      responseJSON: { message: 'Undefined array key' },
+    }, 'error');
+    expect(message).toContain('HTTP 500');
+    expect(message).toContain('laravel.log');
+    expect(message).toContain('Undefined array key');
+  });
+
+  it('status inatteso → messaggio con il codice, mai muto', () => {
+    const { message } = describeAjaxFailure({ status: 418 }, 'error', 'delle gare');
+    expect(message).toContain('418');
+    expect(message).toContain('delle gare');
+  });
+
+  it('nessun argomento → non lancia', () => {
+    expect(() => describeAjaxFailure()).not.toThrow();
   });
 });

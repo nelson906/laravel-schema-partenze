@@ -19,7 +19,7 @@ import {
   escapeHtml
 } from './utils.js';
 
-import { QuadrantiLogic, mergeFedergolfResponses, normalizeGaraTitle } from './quadranti-logic.js';
+import { QuadrantiLogic, mergeFedergolfResponses, normalizeGaraTitle, describeAjaxFailure } from './quadranti-logic.js';
 
 /**
  * Main Quadranti Application Class
@@ -34,6 +34,8 @@ class QuadrantiApp {
     // l'handler legge questo array per recuperare ID maschile/femminile.
     // Niente più "value=id1,id2" magico.
     this.federgolfGare = [];
+    // Handle del contatore mostrato nell'overlay durante le attese lunghe.
+    this.loadingTimer = null;
   }
 
   /**
@@ -669,16 +671,46 @@ $('#fig-strip').on('click', '#fig-strip-copy', (e) => {
    * Mostra l'overlay di caricamento full-screen con un messaggio.
    * Overlay robusto: copre tutta la pagina, impossibile non vederlo
    * durante le attese lunghe (fetch da federgolf.it).
+   *
+   * Con `withElapsed` il testo mostra i secondi trascorsi e, superati i
+   * 10 secondi, avverte che federgolf.it può metterci fino a un minuto:
+   * senza feedback l'attesa sembra un blocco dell'applicazione.
    */
-  showLoading(message) {
-    $('#loading-overlay-text').text(message || 'Caricamento…');
+  showLoading(message, { withElapsed = false } = {}) {
+    const base = message || 'Caricamento…';
+
+    this.stopLoadingTimer();
+    $('#loading-overlay-text').text(base);
     $('#loading-overlay').css('display', 'flex');
+
+    if (!withElapsed) return;
+
+    const startedAt = Date.now();
+    this.loadingTimer = setInterval(() => {
+      const secondi = Math.round((Date.now() - startedAt) / 1000);
+      const avviso = secondi >= 10
+        ? ' — federgolf.it può richiedere fino a un minuto, attendere'
+        : '';
+      $('#loading-overlay-text').text(`${base} (${secondi}s)${avviso}`);
+    }, 1000);
+  }
+
+  /**
+   * Ferma il contatore dell'overlay. Idempotente: chiamarlo due volte
+   * non lascia interval orfani.
+   */
+  stopLoadingTimer() {
+    if (this.loadingTimer) {
+      clearInterval(this.loadingTimer);
+      this.loadingTimer = null;
+    }
   }
 
   /**
    * Nasconde l'overlay di caricamento.
    */
   hideLoading() {
+    this.stopLoadingTimer();
     $('#loading-overlay').hide();
   }
 
@@ -808,7 +840,7 @@ $('#fig-strip').on('click', '#fig-strip-copy', (e) => {
  */
 async handleLoadFedergolfGare() {
   // Overlay full-screen + spinner sul pulsante: l'attesa da federgolf.it è lunga.
-  this.showLoading('Caricamento lista gare da Federgolf…');
+  this.showLoading('Caricamento lista gare da Federgolf…', { withElapsed: true });
   $('#load-federgolf-btn').prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-2"></i> Caricamento...');
 
   try {
@@ -823,12 +855,17 @@ async handleLoadFedergolfGare() {
     if (response.success && response.gare.length > 0) {
       this.populateFedergolfDropdown(response.gare);
       alert(`Trovate ${response.gare.length} gare`);
+    } else if (response.success) {
+      // Chiamata riuscita ma nessuna gara futura: non è un errore.
+      alert('ℹ Nessuna gara in programma trovata su Federgolf.it.');
     } else {
-      alert('Nessuna gara disponibile');
+      // Il backend spiega cosa non ha funzionato (timeout, HTTP, formato).
+      alert('⚠ ' + (response.message || 'Impossibile contattare Federgolf.it.'));
     }
-  } catch (error) {
-    console.error('Errore:', error);
-    alert('Errore nel caricamento delle gare');
+  } catch (jqXHR) {
+    console.error('Errore caricamento gare:', jqXHR);
+    const { message } = describeAjaxFailure(jqXHR, jqXHR && jqXHR.statusText, 'delle gare');
+    if (message) alert('⚠ ' + message);
   } finally {
     this.hideLoading();
     $('#load-federgolf-btn').prop('disabled', false).html('<i class="fas fa-globe mr-2"></i> Carica da Federgolf');
@@ -899,8 +936,12 @@ populateFedergolfDropdown(gare) {
    *   1. Recupera struttura della gara da `this.federgolfGare[idx]`
    *      (esplicita: maschile, femminile possono essere null o ID).
    *   2. Fetch in parallelo (Promise.all) per maschile e femminile presenti.
+   *      Se il fetch fallisce, describeAjaxFailure dice PERCHÉ (sessione
+   *      scaduta, server fermo, 500 applicativo…): non più un generico
+   *      "errore di rete".
    *   3. Combina con mergeFedergolfResponses (state-based, niente flag).
-   *   4. Mostra warnings (se ci sono) ma NON aborta solo per quelli.
+   *   4. Mostra i warning distinguendo condizione normale della gara
+   *      (iscrizioni aperte, lista non pubblicata → ℹ) da guasto (→ ⚠).
    *   5. Se nessun nome è disponibile → notifica e non tocca lo storage.
    *   6. Altrimenti → applyPlayers (single state update).
    */
@@ -910,9 +951,18 @@ populateFedergolfDropdown(gare) {
     const gara = this.federgolfGare[idx];
     if (!gara) return;
 
+    // Traccia gli id effettivamente spediti: se il backend risponde 422
+    // ("identificativo non valido") la console dice subito quale valore
+    // ha prodotto il dropdown.
+    console.debug('Federgolf: gara selezionata', {
+      label: gara.label,
+      maschile: gara.maschile,
+      femminile: gara.femminile,
+    });
+
     // Indicatore di caricamento: il fetch iscritti da federgolf.it può
     // richiedere parecchi secondi. Overlay full-screen + dropdown bloccato.
-    this.showLoading('Caricamento iscritti gara da Federgolf…');
+    this.showLoading('Caricamento iscritti gara da Federgolf…', { withElapsed: true });
     $dropdown.prop('disabled', true);
 
     const fetchIscritti = (garaId) => $.ajax({
@@ -923,20 +973,40 @@ populateFedergolfDropdown(gare) {
     });
 
     try {
-      // Parallelizziamo: per MISTA eravamo seriali (sommando i tempi),
-      // ora richiediamo M e F insieme.
-      const [maschileResponse, femminileResponse] = await Promise.all([
-        gara.maschile  ? fetchIscritti(gara.maschile)  : Promise.resolve(null),
-        gara.femminile ? fetchIscritti(gara.femminile) : Promise.resolve(null),
-      ]);
+      let responses;
 
-      const { atleti, atlete, warnings } = mergeFedergolfResponses({
+      // ── Fase 1: SOLO la chiamata HTTP nel try/catch dedicato. Così un
+      //    errore di rendering a valle non viene più etichettato come
+      //    "errore di rete" (era il difetto del catch unico).
+      try {
+        // Parallelizziamo: per MISTA eravamo seriali (sommando i tempi),
+        // ora richiediamo M e F insieme.
+        responses = await Promise.all([
+          gara.maschile  ? fetchIscritti(gara.maschile)  : Promise.resolve(null),
+          gara.femminile ? fetchIscritti(gara.femminile) : Promise.resolve(null),
+        ]);
+      } catch (jqXHR) {
+        // jQuery rigetta con il solo jqXHR: statusText vale 'timeout',
+        // 'abort' o 'error' nei casi senza risposta HTTP.
+        console.error('Errore caricamento iscritti:', jqXHR);
+        const { message } = describeAjaxFailure(jqXHR, jqXHR && jqXHR.statusText, 'degli iscritti');
+        if (message) alert('⚠ ' + message);
+        $dropdown.val('');
+        return;
+      }
+
+      // ── Fase 2: interpretazione della risposta applicativa.
+      const [maschileResponse, femminileResponse] = responses;
+
+      const { atleti, atlete, warnings, severity } = mergeFedergolfResponses({
         maschileResponse,
         femminileResponse,
       });
 
       if (warnings.length) {
-        alert('⚠ ' + warnings.join('\n'));
+        // ℹ per le condizioni normali della gara (iscrizioni ancora aperte,
+        // lista non pubblicata), ⚠ solo per i guasti veri.
+        alert((severity === 'error' ? '⚠ ' : 'ℹ ') + warnings.join('\n'));
       }
 
       if (atleti.length === 0 && atlete.length === 0) {
@@ -950,12 +1020,8 @@ populateFedergolfDropdown(gare) {
 
       this.applyPlayers({ atleti, atlete });
       alert(`Iscritti caricati!\n${atleti.length} atleti\n${atlete.length} atlete`);
-
-    } catch (error) {
-      console.error('Errore caricamento iscritti:', error);
-      alert('⚠ Errore di rete nel caricamento degli iscritti.');
     } finally {
-      // Ripristina UI sia in caso di successo sia di errore
+      // Ripristina UI in ogni caso (successo, warning, errore, return anticipato)
       this.hideLoading();
       $dropdown.prop('disabled', false);
     }

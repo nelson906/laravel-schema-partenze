@@ -1797,11 +1797,16 @@ export function normalizeGaraTitle(title) {
  *   { state: 'ready'|'open'|'empty'|'error', iscritti: string[], message?: string }
  *
  * SEMANTICA degli stati:
- *   - 'ready'  → usa iscritti
- *   - 'open'   → iscrizioni non chiuse, nomi non disponibili (warning)
- *   - 'empty'  → gara senza iscritti (warning informativo)
- *   - 'error'  → rete/timeout (warning con messaggio)
- *   - null/missing → side non richiesto (nessun warning)
+ *   - 'ready'       → usa iscritti
+ *   - 'open'        → iscrizioni non ancora chiuse (info, non è un errore)
+ *   - 'empty'       → nessun iscritto presente (info)
+ *   - 'unpublished' → lista iscritti non ancora pubblicata (info)
+ *   - 'not_found'   → gara rimossa/rinviata su federgolf (errore)
+ *   - 'error'       → rete/timeout/formato (errore, con messaggio)
+ *   - null/missing  → side non richiesto (nessun warning)
+ *
+ * Il testo del warning viene dal campo `message` del backend, unica fonte di
+ * verità: qui restano solo i fallback per risposte prive di messaggio.
  *
  * REGOLA di merge:
  *   - Per ogni lato richiesto raccogli i nomi (solo se state='ready')
@@ -1812,31 +1817,43 @@ export function normalizeGaraTitle(title) {
  * @param {Object} args
  * @param {Object|null} args.maschileResponse - Response per la gara maschile (o null se non richiesta)
  * @param {Object|null} args.femminileResponse - Response per la gara femminile (o null se non richiesta)
- * @returns {{atleti: string[], atlete: string[], warnings: string[]}}
+ * @returns {{atleti: string[], atlete: string[], warnings: string[], severity: string|null, states: Object}}
  */
 export function mergeFedergolfResponses({ maschileResponse = null, femminileResponse = null } = {}) {
+    // Testi di fallback: usati solo se il backend non manda `message`
+    // (versioni vecchie del controller o risposte troncate).
+    const FALLBACK = {
+        open: 'iscrizioni non ancora chiuse: nessun giocatore ammesso.',
+        empty: 'nessun iscritto presente.',
+        unpublished: 'lista iscritti non ancora pubblicata su Federgolf.it.',
+        not_found: 'gara non trovata su Federgolf.it.',
+        error: 'errore nel caricamento degli iscritti.',
+    };
+
+    // Gli stati che NON sono un guasto ma una condizione normale della gara:
+    // servono al caller per scegliere l'icona (ℹ invece di ⚠).
+    const INFO_STATES = ['open', 'empty', 'unpublished'];
+
     const dispatch = (response, label) => {
         if (!response) {
-            return { names: [], warning: null };
+            return { names: [], warning: null, state: null, severity: null };
         }
-        switch (response.state) {
-            case 'ready':
-                return { names: response.iscritti || [], warning: null };
-            case 'open':
-                return { names: [], warning: `Iscrizioni gara ${label} non ancora chiuse.` };
-            case 'empty':
-                return { names: [], warning: `Gara ${label} senza iscritti.` };
-            case 'error':
-                return {
-                    names: [],
-                    warning: `Errore caricamento iscritti ${label}: ${response.message || 'rete non disponibile'}`,
-                };
-            default:
-                return {
-                    names: [],
-                    warning: `Risposta ${label} non riconosciuta.`,
-                };
+
+        if (response.state === 'ready') {
+            return { names: response.iscritti || [], warning: null, state: 'ready', severity: null };
         }
+
+        const state = response.state;
+        const known = Object.prototype.hasOwnProperty.call(FALLBACK, state);
+        const message = response.message
+            || (known ? FALLBACK[state] : `risposta non riconosciuta (state: ${state}).`);
+
+        return {
+            names: [],
+            warning: `Gara ${label} — ${message}`,
+            state: known ? state : 'unknown',
+            severity: INFO_STATES.includes(state) ? 'info' : 'error',
+        };
     };
 
     const m = dispatch(maschileResponse, 'maschile');
@@ -1846,9 +1863,113 @@ export function mergeFedergolfResponses({ maschileResponse = null, femminileResp
     if (m.warning) warnings.push(m.warning);
     if (f.warning) warnings.push(f.warning);
 
+    // severity complessiva: 'error' se almeno un lato è un guasto vero,
+    // 'info' se sono solo condizioni normali della gara, null se tutto ok.
+    const severities = [m.severity, f.severity].filter(Boolean);
+    const severity = severities.includes('error')
+        ? 'error'
+        : (severities.length ? 'info' : null);
+
     return {
         atleti: m.names,
         atlete: f.names,
         warnings,
+        severity,
+        states: { maschile: m.state, femminile: f.state },
     };
 }
+
+/**
+ * Traduce un fallimento di $.ajax in un messaggio comprensibile.
+ *
+ * Prima ogni rigetto della promise finiva in "Errore di rete nel caricamento
+ * degli iscritti", anche quando la rete era perfettamente funzionante: la
+ * causa tipica è la sessione scaduta (419/401) o un 500 applicativo. Qui la
+ * causa viene distinta e, quando il backend ha risposto in JSON, si usa il
+ * suo `message`.
+ *
+ * @param {Object} jqXHR      - oggetto jqXHR (o {status, responseJSON})
+ * @param {string} textStatus - 'timeout' | 'abort' | 'error' | 'parsererror'
+ * @param {string} contesto   - cosa si stava caricando, es. 'degli iscritti'
+ * @returns {{message: string|null, severity: string}} message null = silenzioso (abort)
+ */
+export function describeAjaxFailure(jqXHR = {}, textStatus = 'error', contesto = 'dei dati') {
+    const status = jqXHR.status || 0;
+    const body = jqXHR.responseJSON || null;
+
+    if (textStatus === 'abort') {
+        return { message: null, severity: 'info' };
+    }
+
+    if (textStatus === 'timeout') {
+        return {
+            message: `Il server non ha risposto entro il tempo massimo durante il caricamento ${contesto}. Riprovare.`,
+            severity: 'error',
+        };
+    }
+
+    // status 0 = richiesta mai arrivata al server (offline, server fermo,
+    // connessione chiusa). Questo è l'unico vero "errore di rete".
+    if (status === 0) {
+        return {
+            message: 'Nessuna risposta dal server: verificare che l\'applicazione sia avviata e la connessione attiva.',
+            severity: 'error',
+        };
+    }
+
+    if (status === 419) {
+        return {
+            message: 'Sessione scaduta (token CSRF non più valido). Ricaricare la pagina con F5 e riprovare.',
+            severity: 'error',
+        };
+    }
+
+    if (status === 401 || status === 403) {
+        return {
+            message: 'Sessione non più valida o accesso negato. Effettuare di nuovo il login e riprovare.',
+            severity: 'error',
+        };
+    }
+
+    if (status === 404) {
+        return {
+            message: 'Indirizzo del servizio non trovato (HTTP 404): controllare la configurazione delle route.',
+            severity: 'error',
+        };
+    }
+
+    if (status === 422) {
+        // Errori di validazione Laravel: mostriamo il campo che non va.
+        const errors = (body && body.errors) || {};
+        const dettagli = Object.values(errors).flat().join(' ');
+
+        return {
+            message: `Richiesta non valida${dettagli ? ': ' + dettagli : ' (dati della gara non riconosciuti).'}`,
+            severity: 'error',
+        };
+    }
+
+    if (status === 429) {
+        return {
+            message: 'Troppe richieste in poco tempo. Attendere un minuto e riprovare.',
+            severity: 'error',
+        };
+    }
+
+    if (status >= 500) {
+        const dettaglio = (body && body.message) ? ` (${body.message})` : '';
+
+        return {
+            message: `Errore interno dell'applicazione (HTTP ${status})${dettaglio}. Il dettaglio è in storage/logs/laravel.log.`,
+            severity: 'error',
+        };
+    }
+
+    const dettaglio = (body && body.message) ? ` (${body.message})` : '';
+
+    return {
+        message: `Errore imprevisto nel caricamento ${contesto}: HTTP ${status}${dettaglio}.`,
+        severity: 'error',
+    };
+}
+
