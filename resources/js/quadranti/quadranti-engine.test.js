@@ -6,6 +6,11 @@
 // ════════════════════════════════════════════════════════════════════════
 import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
 
+import { QuadrantiLogic } from './quadranti-logic.js';
+import { DEFAULT_CONFIG } from './config.js';
+import { storage } from './utils.js';
+import fixtures from './__fixtures__pdf.json';
+
 const localStorageMock = (() => {
   let s = {};
   return {
@@ -16,11 +21,6 @@ const localStorageMock = (() => {
   };
 })();
 beforeAll(() => vi.stubGlobal('localStorage', localStorageMock));
-
-import { QuadrantiLogic } from './quadranti-logic.js';
-import { DEFAULT_CONFIG } from './config.js';
-import { storage } from './utils.js';
-import fixtures from './__fixtures__pdf.json';
 
 const mk = (o = {}) => new QuadrantiLogic({ ...DEFAULT_CONFIG, ...o });
 const reset = () => { storage.remove('atleti'); storage.remove('atlete'); };

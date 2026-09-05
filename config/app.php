@@ -123,4 +123,18 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Super Admin di bootstrap
+    |--------------------------------------------------------------------------
+    |
+    | Email promossa a super_admin da PromoteFirstSuperAdminSeeder quando in
+    | tabella non ce n'e' ancora nessuno. Sta qui e non in env() diretto
+    | perche' con la config cachata (php artisan config:cache, tipico su
+    | Aruba) env() fuori da config/ torna sempre null.
+    |
+    */
+
+    'superadmin_email' => env('SUPERADMIN_EMAIL'),
+
 ];

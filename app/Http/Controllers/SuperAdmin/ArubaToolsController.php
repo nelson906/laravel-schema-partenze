@@ -5,16 +5,19 @@ namespace App\Http\Controllers\SuperAdmin;
 use App\Helpers\SystemInfo;
 use App\Helpers\SystemOperations;
 use App\Http\Controllers\Controller;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
+use Illuminate\View\View;
 
 class ArubaToolsController extends Controller
 {
     /**
      * Dashboard principale
      */
-    public function dashboard()
+    public function dashboard(): View
     {
         $data = [
             'system_info' => SystemInfo::get(),
@@ -29,7 +32,7 @@ class ArubaToolsController extends Controller
     /**
      * Gestione cache
      */
-    public function cacheIndex()
+    public function cacheIndex(): View
     {
         return view('aruba-admin.cache');
     }
@@ -37,9 +40,9 @@ class ArubaToolsController extends Controller
     /**
      * Pulisci cache specifiche
      */
-    public function cacheClear(Request $request)
+    public function cacheClear(Request $request): RedirectResponse
     {
-        $type = $request->input('type', 'all');
+        $type = $request->string('type', 'all')->toString();
         $output = [];
 
         try {
@@ -87,7 +90,7 @@ class ArubaToolsController extends Controller
     /**
      * Ottimizza applicazione
      */
-    public function optimize()
+    public function optimize(): RedirectResponse
     {
         try {
             Artisan::call('config:cache');
@@ -103,7 +106,7 @@ class ArubaToolsController extends Controller
     /**
      * Pulisci assets vecchi (non in manifest.json)
      */
-    public function cleanOldAssets()
+    public function cleanOldAssets(): RedirectResponse
     {
         try {
             $buildManifest = public_path('build/manifest.json');
@@ -116,19 +119,25 @@ class ArubaToolsController extends Controller
             $manifestContent = File::get($buildManifest);
             $manifest = json_decode($manifestContent, true);
 
-            if (! $manifest) {
+            if (! is_array($manifest) || $manifest === []) {
                 return back()->with('error', '❌ Errore lettura manifest.json');
             }
 
-            // Estrai file referenziati nel manifest
+            // Estrai file referenziati nel manifest. Il manifest e' JSON di
+            // build: ogni valore va verificato prima di usarlo come path.
             $referencedFiles = [];
             foreach ($manifest as $entry) {
-                if (isset($entry['file'])) {
+                if (! is_array($entry)) {
+                    continue;
+                }
+                if (isset($entry['file']) && is_string($entry['file'])) {
                     $referencedFiles[] = basename($entry['file']);
                 }
-                if (isset($entry['css'])) {
+                if (isset($entry['css']) && is_array($entry['css'])) {
                     foreach ($entry['css'] as $css) {
-                        $referencedFiles[] = basename($css);
+                        if (is_string($css)) {
+                            $referencedFiles[] = basename($css);
+                        }
                     }
                 }
             }
@@ -141,7 +150,7 @@ class ArubaToolsController extends Controller
             foreach ($assetsFiles as $file) {
                 $filename = $file->getFilename();
 
-                if (! in_array($filename, $referencedFiles)) {
+                if (! in_array($filename, $referencedFiles, true)) {
                     if (File::delete($file->getPathname())) {
                         $deletedCount++;
                         $deletedFiles[] = $filename;
@@ -164,7 +173,7 @@ class ArubaToolsController extends Controller
     /**
      * PHPInfo
      */
-    public function phpinfo()
+    public function phpinfo(): View
     {
         return view('aruba-admin.phpinfo');
     }
@@ -172,7 +181,7 @@ class ArubaToolsController extends Controller
     /**
      * Visualizza logs
      */
-    public function logs()
+    public function logs(): View
     {
         $logs = SystemInfo::getLatestLogs(100);
 
@@ -182,7 +191,7 @@ class ArubaToolsController extends Controller
     /**
      * Pulisci log
      */
-    public function clearLogs()
+    public function clearLogs(): RedirectResponse
     {
         try {
             $logFile = storage_path('logs/laravel.log');
@@ -202,7 +211,7 @@ class ArubaToolsController extends Controller
     /**
      * Verifica permessi
      */
-    public function permissions()
+    public function permissions(): View
     {
         $permissions = SystemInfo::checkPermissions();
         $linkStatus = $this->checkStorageLinkStatus();
@@ -214,7 +223,7 @@ class ArubaToolsController extends Controller
     /**
      * Correggi permessi (tentativo)
      */
-    public function fixPermissions()
+    public function fixPermissions(): RedirectResponse
     {
         $directories = [
             storage_path(),
@@ -248,7 +257,7 @@ class ArubaToolsController extends Controller
     // COMPOSER OPERATIONS
     // ================================
 
-    public function composerIndex()
+    public function composerIndex(): View
     {
         $composerVersion = SystemOperations::getComposerVersion();
         $outdated = SystemOperations::composerOutdated();
@@ -256,7 +265,7 @@ class ArubaToolsController extends Controller
         return view('aruba-admin.composer', compact('composerVersion', 'outdated'));
     }
 
-    public function composerDumpAutoload()
+    public function composerDumpAutoload(): RedirectResponse
     {
         $result = SystemOperations::composerDumpAutoload();
 
@@ -270,7 +279,7 @@ class ArubaToolsController extends Controller
     /**
      * Diagnostica Composer
      */
-    public function composerDiagnostic()
+    public function composerDiagnostic(): JsonResponse
     {
         $possiblePaths = SystemOperations::composerSearchPaths();
 
@@ -284,9 +293,11 @@ class ArubaToolsController extends Controller
             $output .= "Tentativo: {$path}\n";
 
             try {
+                $result = [];
+                $returnCode = 0;
                 exec("{$path} --version 2>&1", $result, $returnCode);
 
-                if ($returnCode === 0 && ! empty($result)) {
+                if ($returnCode === 0 && $result !== []) {
                     $output .= "  ✅ TROVATO!\n";
                     $output .= '  Versione: '.implode("\n", $result)."\n";
                     $found = true;
@@ -326,27 +337,30 @@ class ArubaToolsController extends Controller
     // DATABASE BACKUP
     // ================================
 
-    public function databaseIndex()
+    public function databaseIndex(): View
     {
         $backups = SystemOperations::listDatabaseBackups();
 
         return view('aruba-admin.database', compact('backups'));
     }
 
-    public function databaseBackup()
+    public function databaseBackup(): RedirectResponse
     {
         $result = SystemOperations::backupDatabase();
 
         if ($result['success']) {
-            return back()->with('success', "✅ Backup creato: {$result['filename']} (".number_format($result['size'] / 1024 / 1024, 2).' MB)');
+            $filename = $result['filename'] ?? '(senza nome)';
+            $sizeMb = ($result['size'] ?? 0) / 1024 / 1024;
+
+            return back()->with('success', "✅ Backup creato: {$filename} (".number_format($sizeMb, 2).' MB)');
         }
 
-        return back()->with('error', '❌ '.$result['output']);
+        return back()->with('error', '❌ '.($result['output'] ?? 'errore sconosciuto'));
     }
 
-    public function databaseRestore(Request $request)
+    public function databaseRestore(Request $request): RedirectResponse
     {
-        $filename = $request->input('filename');
+        $filename = $request->string('filename')->toString();
         $result = SystemOperations::restoreDatabase($filename);
 
         return back()->with(
@@ -359,7 +373,7 @@ class ArubaToolsController extends Controller
     // SERVER MONITORING
     // ================================
 
-    public function serverMonitoring()
+    public function serverMonitoring(): View
     {
         $serverLoad = SystemOperations::getServerLoad();
         $phpProcesses = SystemOperations::listPhpProcesses();
@@ -372,7 +386,7 @@ class ArubaToolsController extends Controller
     // SECURITY
     // ================================
 
-    public function securityIndex()
+    public function securityIndex(): View
     {
         $sensitiveFiles = SystemOperations::checkSensitiveFiles();
         $suspiciousFiles = SystemOperations::scanForSuspiciousFiles();
@@ -387,7 +401,7 @@ class ArubaToolsController extends Controller
     /**
      * Visualizza pagina gestione storage link (redirect a permissions)
      */
-    public function storageLinkIndex()
+    public function storageLinkIndex(): RedirectResponse
     {
         return redirect()->route('aruba.admin.permissions');
     }
@@ -395,7 +409,7 @@ class ArubaToolsController extends Controller
     /**
      * Test se Artisan è disponibile
      */
-    private function isArtisanAvailable()
+    private function isArtisanAvailable(): bool
     {
         try {
             // Tenta di eseguire un comando innocuo
@@ -410,11 +424,15 @@ class ArubaToolsController extends Controller
     /**
      * Verifica stato storage link
      */
-    private function checkStorageLinkStatus()
+    /**
+     * @return array<string, mixed>
+     */
+    private function checkStorageLinkStatus(): array
     {
         $publicStoragePath = public_path('storage');
         $targetPath = storage_path('app/public');
 
+        /** @var array<string, mixed> $status */
         $status = [
             'exists' => false,
             'is_link' => false,
@@ -457,7 +475,7 @@ class ArubaToolsController extends Controller
     /**
      * Crea storage link
      */
-    public function createStorageLink()
+    public function createStorageLink(): RedirectResponse
     {
         try {
             $publicStoragePath = public_path('storage');
@@ -490,7 +508,7 @@ class ArubaToolsController extends Controller
     /**
      * Rimuovi storage link
      */
-    public function removeStorageLink()
+    public function removeStorageLink(): RedirectResponse
     {
         try {
             $publicStoragePath = public_path('storage');
@@ -514,7 +532,7 @@ class ArubaToolsController extends Controller
     /**
      * Test storage link
      */
-    public function testStorageLink()
+    public function testStorageLink(): JsonResponse
     {
         $results = [];
 

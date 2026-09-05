@@ -147,7 +147,7 @@ class UserManagementTest extends TestCase
             ])
             ->assertSessionHasErrors('user_type');
 
-        $this->assertSame(UserType::SuperAdmin, $superAdmin->fresh()->user_type);
+        $this->assertSame(UserType::SuperAdmin, $superAdmin->refresh()->user_type);
     }
 
     public function test_user_cannot_delete_themselves(): void
@@ -169,7 +169,7 @@ class UserManagementTest extends TestCase
             ->patch(route('admin.users.toggle-active', $admin))
             ->assertSessionHas('error');
 
-        $this->assertTrue($admin->fresh()->is_active);
+        $this->assertTrue($admin->refresh()->is_active);
     }
 
     /* ─── Operazioni consentite ──────────────────────────── */
@@ -194,11 +194,11 @@ class UserManagementTest extends TestCase
         $this->actingAs($superAdmin)
             ->patch(route('admin.users.toggle-active', $target));
 
-        $this->assertFalse($target->fresh()->is_active);
+        $this->assertFalse($target->refresh()->is_active);
 
         $this->actingAs($superAdmin)
             ->patch(route('admin.users.toggle-active', $target));
 
-        $this->assertTrue($target->fresh()->is_active);
+        $this->assertTrue($target->refresh()->is_active);
     }
 }

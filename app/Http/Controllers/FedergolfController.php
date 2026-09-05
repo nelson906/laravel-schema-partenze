@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -25,6 +26,30 @@ class FedergolfController extends Controller
 {
     /** Lunghezza massima accettata per un id gara. */
     private const GARA_ID_MAX = 200;
+
+    /**
+     * Normalizza a stringa un valore proveniente dal JSON di federgolf.
+     *
+     * I payload di terzi sono `mixed`: un campo che arriva come array o
+     * oggetto non deve diventare "Array" ne' far esplodere il cast.
+     */
+    protected static function asString(mixed $value): string
+    {
+        return is_scalar($value) ? (string) $value : '';
+    }
+
+    /**
+     * URL admin-ajax di federgolf.it.
+     *
+     * config() e' mixed: il cast diretto e' vietato a livello 9, e un valore
+     * non stringa qui vorrebbe dire config/services.php rotto.
+     */
+    protected function ajaxUrl(): string
+    {
+        $url = config('services.federgolf.ajax_url');
+
+        return is_string($url) ? $url : '';
+    }
 
     /**
      * Chiave di cache per un id gara.
@@ -68,7 +93,7 @@ class FedergolfController extends Controller
      * `gara_id` e' trattato come token opaco: nessun vincolo di formato,
      * vedi cacheKeyFor().
      */
-    public function getIscritti(Request $request)
+    public function getIscritti(Request $request): JsonResponse
     {
         // C1: senza validazione un gara_id array/assente produce 500
         // (Array to string conversion) o chiave cache condivisa.
@@ -81,7 +106,7 @@ class FedergolfController extends Controller
         // non si valida per forma — si validano solo tipo, lunghezza e
         // caratteri di controllo. La sicurezza della chiave di cache la dà
         // l'hash in cacheKeyFor(), non una whitelist di caratteri.
-        $validated = $request->validate([
+        $request->validate([
             'gara_id' => ['required', function (string $attribute, mixed $value, \Closure $fail) {
                 // Volutamente NESSUN vincolo di formato: si controlla solo
                 // ciò che serve a non farsi male (tipo, lunghezza, caratteri
@@ -121,10 +146,14 @@ class FedergolfController extends Controller
 
         // Verso federgolf l'id va ESATTAMENTE come ricevuto (a parte gli
         // spazi): non sappiamo se in futuro sarà case-sensitive.
-        $garaId = trim((string) $validated['gara_id']);
+        // validate() e' una macro e torna mixed: l'id si rilegge dal getter
+        // tipizzato, gia' validato qui sopra.
+        $garaId = trim($request->string('gara_id')->toString());
 
         $cacheKey = $this->cacheKeyFor($garaId);
-        $payload = Cache::remember($cacheKey, 60, fn () => $this->fetchIscritti($garaId));
+
+        /** @var array<string, mixed> $payload */
+        $payload = Cache::remember($cacheKey, 60, fn (): array => $this->fetchIscritti($garaId));
 
         // Gli esiti transitori non vanno cacheati: l'utente riprova subito.
         if (in_array($payload['state'] ?? null, ['error', 'not_found'], true)) {
@@ -137,6 +166,9 @@ class FedergolfController extends Controller
     /**
      * Costruisce il payload di risposta con tutte le chiavi sempre presenti,
      * cosi il frontend non deve mai fare guardie su campi mancanti.
+     *
+     * @param  array<string, mixed>  $extra
+     * @return array<string, mixed>
      */
     protected function payload(string $state, ?string $message = null, array $extra = []): array
     {
@@ -150,6 +182,9 @@ class FedergolfController extends Controller
         ], $extra);
     }
 
+    /**
+     * @return array<string, mixed>
+     */
     protected function fetchIscritti(string|int|null $garaId): array
     {
         try {
@@ -161,7 +196,7 @@ class FedergolfController extends Controller
                     'Accept' => 'application/json',
                     'X-Requested-With' => 'XMLHttpRequest',
                 ])
-                ->post(config('services.federgolf.ajax_url'), [
+                ->post($this->ajaxUrl(), [
                     'action' => 'competition-player-list',
                     'competition_id' => $garaId,
                     'page_number' => 1,
@@ -234,6 +269,12 @@ class FedergolfController extends Controller
         // Se federgolf cambia formato -> TypeError: meglio 'state: error' che un 500.
         try {
             foreach ($entries as $entry) {
+                // Ogni riga di federgolf e' un array posizionale: qualunque
+                // altra forma e' formato cambiato, non un iscritto.
+                if (! is_array($entry)) {
+                    continue;
+                }
+
                 $isAmmesso = isset($entry[8]) && is_string($entry[8])
                     && (strpos($entry[8], 'icona-ammesso') !== false || strpos($entry[8], 'icona-wildcard') !== false);
                 if (! $isAmmesso) {
@@ -301,6 +342,9 @@ class FedergolfController extends Controller
      * Traduce lo status HTTP di federgolf.it in stato + messaggio utile.
      * Prima era un unico "errore HTTP nnn" che non diceva cosa fare.
      */
+    /**
+     * @return array<string, mixed>
+     */
     protected function httpErrorPayload(int $status, string|int|null $garaId): array
     {
         Log::warning('Federgolf HTTP error getIscritti', [
@@ -347,7 +391,7 @@ class FedergolfController extends Controller
         );
     }
 
-    public function loadAllCompetitions(Request $request)
+    public function loadAllCompetitions(Request $request): JsonResponse
     {
         try {
             $annoCorrente = (int) date('Y');
@@ -380,43 +424,55 @@ class FedergolfController extends Controller
             $gare = [];
 
             foreach ($entries as $gara) {
-                if ($gara['annullata'] == 1) {
+                // Riga non conforme = formato federgolf cambiato: si salta,
+                // non si sporca l'elenco con voci mezze vuote.
+                if (! is_array($gara) || ! isset($gara['nome'], $gara['data'])) {
+                    continue;
+                }
+
+                $nome = self::asString($gara['nome']);
+                $dataTesto = self::asString($gara['data']);
+
+                if (($gara['annullata'] ?? 0) == 1) {
                     continue;
                 }
                 if (
-                    stripos($gara['nome'], 'ANNULLATA') !== false ||
-                    stripos($gara['nome'], 'RINVIATA') !== false ||
-                    stripos($gara['nome'], 'RINVIATO') !== false
+                    stripos($nome, 'ANNULLATA') !== false ||
+                    stripos($nome, 'RINVIATA') !== false ||
+                    stripos($nome, 'RINVIATO') !== false
                 ) {
                     continue;
                 }
 
-                $dataGara = \DateTime::createFromFormat('d/m/Y', $gara['data']);
+                $dataGara = \DateTime::createFromFormat('d/m/Y', $dataTesto);
                 if ($dataGara && $dataGara < $oggi) {
                     continue;
                 }
 
                 $tipo = 'MISTA';
-                if (stripos($gara['nome'], 'MASCHILE') !== false) {
+                if (stripos($nome, 'MASCHILE') !== false) {
                     $tipo = 'MASCHILE';
-                } elseif (stripos($gara['nome'], 'FEMMINILE') !== false) {
+                } elseif (stripos($nome, 'FEMMINILE') !== false) {
                     $tipo = 'FEMMINILE';
                 }
 
                 $gare[] = [
-                    'id' => $gara['competition_id'],
-                    'title' => $gara['nome'],
+                    'id' => $gara['competition_id'] ?? null,
+                    'title' => $nome,
                     'tipo' => $tipo,
-                    'date' => $gara['data'],
+                    'date' => $dataTesto,
                     'club' => $gara['club'] ?? null,
                 ];
             }
 
-            usort($gare, function ($a, $b) {
+            // Ordinamento per data: le righe con data non parsabile finiscono
+            // in fondo invece di far esplodere il confronto.
+            usort($gare, function (array $a, array $b): int {
                 $dateA = \DateTime::createFromFormat('d/m/Y', $a['date']);
                 $dateB = \DateTime::createFromFormat('d/m/Y', $b['date']);
 
-                return $dateA <=> $dateB;
+                return ($dateA === false ? PHP_INT_MAX : $dateA->getTimestamp())
+                    <=> ($dateB === false ? PHP_INT_MAX : $dateB->getTimestamp());
             });
 
             return response()->json(['success' => true, 'gare' => $gare]);
@@ -444,6 +500,8 @@ class FedergolfController extends Controller
      * risposta, oppure null su errore rete/HTTP/corpo non-JSON (C2/C5).
      * In caso di null valorizza lastCompetitionsReason/Message, cosi il
      * chiamante puo' dire all'utente COSA e' andato storto.
+     *
+     * @return array<int|string, mixed>|null
      */
     protected function fetchCompetitionsYear(int $anno): ?array
     {
@@ -455,7 +513,7 @@ class FedergolfController extends Controller
                     'Accept' => 'application/json',
                     'X-Requested-With' => 'XMLHttpRequest',
                 ])
-                ->post(config('services.federgolf.ajax_url'), [
+                ->post($this->ajaxUrl(), [
                     'action' => 'competitions-search',
                     'tipo' => '',
                     'keyword' => '',
@@ -503,8 +561,10 @@ class FedergolfController extends Controller
         return $data['data'];
     }
 
-    /** Registra il motivo del fallimento e ritorna null (helper di leggibilita'). */
-    protected function failCompetitions(string $reason, string $message): ?array
+    /**
+     * Registra il motivo del fallimento e ritorna null (helper di leggibilita').
+     */
+    protected function failCompetitions(string $reason, string $message): null
     {
         $this->lastCompetitionsReason = $reason;
         $this->lastCompetitionsMessage = $message;

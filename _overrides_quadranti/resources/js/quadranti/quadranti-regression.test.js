@@ -13,15 +13,15 @@
 // ════════════════════════════════════════════════════════════════════════
 import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
 
+import { QuadrantiLogic } from './quadranti-logic.js';
+import { DEFAULT_CONFIG } from './config.js';
+import { storage } from './utils.js';
+
 const localStorageMock = (() => {
   let s = {};
   return { getItem: (k) => (k in s ? s[k] : null), setItem: (k, v) => { s[k] = String(v); }, removeItem: (k) => { delete s[k]; }, clear: () => { s = {}; } };
 })();
 beforeAll(() => vi.stubGlobal('localStorage', localStorageMock));
-
-import { QuadrantiLogic } from './quadranti-logic.js';
-import { DEFAULT_CONFIG } from './config.js';
-import { storage } from './utils.js';
 
 const mk = (o = {}) => new QuadrantiLogic({ ...DEFAULT_CONFIG, ...o });
 const reset = () => { storage.remove('atleti'); storage.remove('atlete'); };
@@ -30,7 +30,7 @@ const reset = () => { storage.remove('atleti'); storage.remove('atlete'); };
 // `border-gray-300" style="color: black|red"`; le celle flight/tee/orario hanno
 // `font-medium`. Le celle vuote di un volo corto restano (contenuto ""); il lato
 // tee vuoto usa colspan (non è cella-giocatore). Raggruppa per `mod`.
-function parseFlights(html, mod) {
+function parseFlights(html) {
   const body = html.includes('<tbody>') ? html.split('<tbody>')[1] : html;
   const flights = [];
   // Celle-giocatore: classe `border-gray-300"` (flight/tee/orario hanno
@@ -55,7 +55,7 @@ function parseFlights(html, mod) {
 }
 
 function checkInvariants(html, { players, proette, mod = 3, internal }) {
-  const flights = parseFlights(html, mod);
+  const flights = parseFlights(html);
 
   // I1 — nessun volo con UN solo giocatore
   const lone = flights.filter((f) => f.size === 1);
@@ -196,8 +196,8 @@ describe('REGRESSIONE — Prova di gioco tee unico giri 1-2', () => {
   });
 
   it('rotazione tra giri: 1° apre metà bassa, 2° apre metà alta (132U)', () => {
-    const g1 = parseFlights(mk({ ...base, players: 132 }).generateSingleTee('prima'), 3);
-    const g2 = parseFlights(mk({ ...base, players: 132 }).generateSingleTee('seconda'), 3);
+    const g1 = parseFlights(mk({ ...base, players: 132 }).generateSingleTee('prima'));
+    const g2 = parseFlights(mk({ ...base, players: 132 }).generateSingleTee('seconda'));
     const meta = 66; // 132 mod 3: limit2 = 66, nessuna difference
     expect(Math.max(...g1[0].ranks)).toBeLessThanOrEqual(meta);
     expect(Math.min(...g1[g1.length - 1].ranks)).toBeGreaterThan(meta);
@@ -253,7 +253,7 @@ describe('REGRESSIONE — flight da 2 giocatori (campi pari)', () => {
       doppiePartenze: 'Tee Unico', nominativo: 'Off',
       startTime: '09:00', gap: '00:09', round: '04:30',
     }).generateSingleTee('prima');
-    const flights = parseFlights(html, 2);
+    const flights = parseFlights(html);
     expect(flights.length).toBe(17);
     const bassi = flights.filter((f) => Math.max(...f.ranks) <= 17);
     const alti  = flights.filter((f) => Math.min(...f.ranks) >= 18);

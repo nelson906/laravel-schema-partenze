@@ -171,6 +171,9 @@ class QuadrantiTest extends TestCase
 
     /* ─── effemeridi: valori pinnati ─────────────────────── */
 
+    /**
+     * @return \Illuminate\Testing\TestResponse<\Illuminate\Http\JsonResponse>
+     */
     private function coordinates(string $geoArea, string $start): \Illuminate\Testing\TestResponse
     {
         return $this->actingAs(User::factory()->create())
@@ -232,6 +235,67 @@ class QuadrantiTest extends TestCase
         // 25/10/2026 = ultima domenica di ottobre: ora legale GIÀ finita (<).
         $this->coordinates('CENTRO', '25/10/2026')
             ->assertExactJson(['sunrise' => '06:34', 'sunset' => '17:14']);
+    }
+
+    /**
+     * Riporto dei minuti quando round() porta i minuti a 60.
+     *
+     * getCoordinates() calcola l'ora come floor() + round(frazione * 60): se
+     * la frazione supera 59.5/60 i minuti arrotondano a 60 e servono i due
+     * rami `$sunrise_h++ / $sunrise_m -= 60` per non produrre orari come
+     * "07:60". Senza questi casi la suite resta verde anche rimuovendo il
+     * riporto (mutanti sopravvissuti alla run Infection del 04/09/2026).
+     *
+     * Date trovate scandendo 2025-2027 su tutte le aree; fra parentesi
+     * l'orario che uscirebbe senza correzione.
+     */
+    public function test_coordinates_carries_minutes_to_the_next_hour(): void
+    {
+        // Alba, ora solare (+1): senza riporto darebbe "07:60".
+        $this->coordinates('NORD OVEST', '14/01/2026')
+            ->assertOk()
+            ->assertExactJson(['sunrise' => '08:00', 'sunset' => '17:05']);
+
+        // Alba, ora legale (+2): senza riporto darebbe "05:60".
+        $this->coordinates('NORD OVEST', '25/07/2026')
+            ->assertOk()
+            ->assertExactJson(['sunrise' => '06:00', 'sunset' => '21:00']);
+
+        // Tramonto, ora solare (+1): senza riporto darebbe "16:60".
+        $this->coordinates('NORD EST', '23/01/2026')
+            ->assertOk()
+            ->assertExactJson(['sunrise' => '07:36', 'sunset' => '17:00']);
+
+        // Tramonto, ora legale (+2): senza riporto darebbe "20:60".
+        $this->coordinates('NORD OVEST', '27/05/2026')
+            ->assertOk()
+            ->assertExactJson(['sunrise' => '05:41', 'sunset' => '21:00']);
+    }
+
+    /**
+     * Nessun orario prodotto puo' avere minuti fuori da 00-59 o ore fuori
+     * da 00-23: guardia strutturale sull'intero anno, indipendente dai
+     * valori pinnati (se l'algoritmo cambia, questo test resta valido).
+     */
+    public function test_coordinates_never_returns_invalid_clock_values(): void
+    {
+        $user = User::factory()->create();
+
+        foreach (['NORD OVEST', 'CENTRO', 'SARDEGNA'] as $area) {
+            foreach (['14/01/2026', '25/07/2026', '27/05/2026', '02/09/2026', '20/12/2026'] as $data) {
+                $json = $this->actingAs($user)
+                    ->postJson(route('quadranti.coordinates'), ['geo_area' => $area, 'start' => $data])
+                    ->assertOk();
+
+                foreach (['sunrise', 'sunset'] as $chiave) {
+                    $this->assertMatchesRegularExpression(
+                        '/^(?:[01]\\d|2[0-3]):[0-5]\\d$/',
+                        $this->jsonString($json, $chiave),
+                        "{$area} {$data}: {$chiave} fuori formato HH:MM"
+                    );
+                }
+            }
+        }
     }
 
     public function test_coordinates_accepts_dashes_and_year_bounds(): void

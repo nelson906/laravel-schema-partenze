@@ -28,6 +28,8 @@ class FedergolfTest extends TestCase
     /**
      * Costruisce una riga 'processedData' come la restituisce federgolf.it.
      * Indici significativi per il controller: [1] = nome, [8] = stato.
+     *
+     * @return list<string>
      */
     private function entry(string $name, bool $ammesso = true): array
     {
@@ -40,6 +42,9 @@ class FedergolfTest extends TestCase
         return $row;
     }
 
+    /**
+     * @param  array<string, mixed>  $body
+     */
     private function fakeFedergolf(array $body, int $status = 200): void
     {
         // Da novembre loadAllCompetitions interroga anche l'anno successivo
@@ -111,7 +116,7 @@ class FedergolfTest extends TestCase
 
         // Il messaggio non deve affermare che la gara è "senza iscritti" e
         // basta: le iscrizioni potrebbero semplicemente non essere aperte.
-        $this->assertStringContainsString('ancora aperte', $response->json('message'));
+        $this->assertStringContainsString('ancora aperte', $this->jsonString($response, 'message'));
     }
 
     public function test_iscritti_error_when_federgolf_returns_http_error(): void
@@ -125,8 +130,8 @@ class FedergolfTest extends TestCase
             ->assertJsonPath('reason', 'http');
 
         // Il messaggio dice che è federgolf a non essere disponibile e cosa fare.
-        $this->assertStringContainsString('non è al momento disponibile', $response->json('message'));
-        $this->assertStringContainsString('500', $response->json('message'));
+        $this->assertStringContainsString('non è al momento disponibile', $this->jsonString($response, 'message'));
+        $this->assertStringContainsString('500', $this->jsonString($response, 'message'));
     }
 
     public function test_iscritti_not_found_when_federgolf_returns_404(): void
@@ -139,7 +144,7 @@ class FedergolfTest extends TestCase
             ->assertOk()
             ->assertJsonPath('state', 'not_found');
 
-        $this->assertStringContainsString('non trovata', $response->json('message'));
+        $this->assertStringContainsString('non trovata', $this->jsonString($response, 'message'));
     }
 
     public function test_iscritti_rate_limit_when_federgolf_returns_429(): void
@@ -152,7 +157,7 @@ class FedergolfTest extends TestCase
             ->assertJsonPath('state', 'error')
             ->assertJsonPath('reason', 'rate_limit');
 
-        $this->assertStringContainsString('Troppe richieste', $response->json('message'));
+        $this->assertStringContainsString('Troppe richieste', $this->jsonString($response, 'message'));
     }
 
     public function test_iscritti_forbidden_when_federgolf_returns_403(): void
@@ -178,7 +183,7 @@ class FedergolfTest extends TestCase
             ->assertJsonPath('state', 'unpublished')
             ->assertJsonPath('reason', 'no_data');
 
-        $this->assertStringContainsString('non ancora pubblicata', $response->json('message'));
+        $this->assertStringContainsString('non ancora pubblicata', $this->jsonString($response, 'message'));
     }
 
     public function test_iscritti_unpublished_when_wordpress_answers_zero(): void
@@ -215,8 +220,8 @@ class FedergolfTest extends TestCase
             ->assertJsonPath('totale', 3)
             ->assertJsonPath('ammessi', 0);
 
-        $this->assertStringContainsString('3 iscritti', $response->json('message'));
-        $this->assertStringContainsString('non ancora chiuse', $response->json('message'));
+        $this->assertStringContainsString('3 iscritti', $this->jsonString($response, 'message'));
+        $this->assertStringContainsString('non ancora chiuse', $this->jsonString($response, 'message'));
     }
 
     public function test_iscritti_ready_exposes_counts(): void
@@ -371,7 +376,7 @@ class FedergolfTest extends TestCase
 
             $this->assertStringContainsString(
                 'mancante',
-                $response->json('errors.gara_id.0'),
+                $this->jsonString($response, 'errors.gara_id.0'),
                 'Payload: '.json_encode($payload)
             );
         }
@@ -384,7 +389,7 @@ class FedergolfTest extends TestCase
             ->assertStatus(422)
             ->assertJsonValidationErrors('gara_id');
 
-        $this->assertStringContainsString('troppo lungo', $response->json('errors.gara_id.0'));
+        $this->assertStringContainsString('troppo lungo', $this->jsonString($response, 'errors.gara_id.0'));
     }
 
     public function test_iscritti_rejects_control_characters_in_gara_id(): void
@@ -415,7 +420,7 @@ class FedergolfTest extends TestCase
 
         // Passa a federgolf inalterato e non finisce grezzo nella chiave di
         // cache (cacheKeyFor lo passa per sha1): nessun path traversal.
-        Http::assertSent(fn ($request) => $request['competition_id'] === $strano);
+        Http::assertSent(fn (\Illuminate\Http\Client\Request $request) => $request['competition_id'] === $strano);
     }
 
     public function test_iscritti_accepts_guid_gara_id(): void
@@ -438,7 +443,7 @@ class FedergolfTest extends TestCase
             ->assertJsonPath('state', 'open');
 
         // L'id deve arrivare a federgolf così com'è, non convertito a intero.
-        Http::assertSent(fn ($request) => $request['competition_id'] === $guid);
+        Http::assertSent(fn (\Illuminate\Http\Client\Request $request) => $request['competition_id'] === $guid);
     }
 
     public function test_iscritti_rejects_array_gara_id(): void
@@ -530,7 +535,7 @@ class FedergolfTest extends TestCase
             ->assertJsonMissing(['id' => 222])
             ->assertJsonMissing(['id' => 333]);
 
-        $this->assertCount(1, $response->json('gare'));
+        $this->assertCount(1, $this->jsonList($response, 'gare'));
     }
 
     public function test_load_all_competitions_excludes_postponed_by_name(): void
@@ -553,7 +558,7 @@ class FedergolfTest extends TestCase
             ->assertJsonMissing(['id' => 403])
             ->assertJsonFragment(['id' => 404]);
 
-        $this->assertCount(1, $response->json('gare'));
+        $this->assertCount(1, $this->jsonList($response, 'gare'));
     }
 
     public function test_load_all_competitions_detects_tipo_from_name(): void
@@ -566,14 +571,17 @@ class FedergolfTest extends TestCase
             ],
         ]);
 
-        $gare = collect($this->actingAs(User::factory()->create())
+        $response = $this->actingAs(User::factory()->create())
             ->post('/user/federgolf/load-all')
-            ->assertOk()
-            ->json('gare'))->keyBy('id');
+            ->assertOk();
 
-        $this->assertSame('MASCHILE', $gare[501]['tipo']);
-        $this->assertSame('FEMMINILE', $gare[502]['tipo']);
-        $this->assertSame('MISTA', $gare[503]['tipo']);
+        $gare = collect($this->jsonList($response, 'gare'))->keyBy('id');
+
+        // get() invece di [] : su una gara assente l'assert fallisce con
+        // "atteso MASCHILE, ricevuto null" invece di un errore di offset.
+        $this->assertSame('MASCHILE', $gare->get(501)['tipo'] ?? null);
+        $this->assertSame('FEMMINILE', $gare->get(502)['tipo'] ?? null);
+        $this->assertSame('MISTA', $gare->get(503)['tipo'] ?? null);
     }
 
     public function test_load_all_competitions_sorts_by_date_ascending(): void
@@ -621,7 +629,7 @@ class FedergolfTest extends TestCase
             ->assertJsonPath('reason', 'http');
 
         // Non più "Errore connessione": il messaggio dice cosa è successo.
-        $this->assertStringContainsString('non è al momento disponibile', $response->json('message'));
+        $this->assertStringContainsString('non è al momento disponibile', $this->jsonString($response, 'message'));
     }
 
     public function test_load_all_competitions_reports_rate_limit(): void
@@ -634,7 +642,7 @@ class FedergolfTest extends TestCase
             ->assertJsonPath('success', false)
             ->assertJsonPath('reason', 'rate_limit');
 
-        $this->assertStringContainsString('Troppe richieste', $response->json('message'));
+        $this->assertStringContainsString('Troppe richieste', $this->jsonString($response, 'message'));
     }
 
     public function test_load_all_competitions_fails_gracefully_on_non_json_body(): void
@@ -649,6 +657,6 @@ class FedergolfTest extends TestCase
             ->assertJsonPath('success', false)
             ->assertJsonPath('reason', 'invalid_format');
 
-        $this->assertStringContainsString('formato inatteso', $response->json('message'));
+        $this->assertStringContainsString('formato inatteso', $this->jsonString($response, 'message'));
     }
 }

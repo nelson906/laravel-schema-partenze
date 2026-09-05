@@ -10,11 +10,12 @@
  * @returns {number[]} Array of numbers
  */
 export const range = (start, end) => {
-  if (typeof end === 'undefined') {
-    end = start;
-    start = 0;
-  }
-  return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+  // Firma a un argomento: range(5) === range(0, 5). Niente riassegnazione
+  // dei parametri, cosi la firma resta leggibile a colpo d'occhio.
+  const from = typeof end === 'undefined' ? 0 : start;
+  const to = typeof end === 'undefined' ? start : end;
+
+  return Array.from({ length: to - from + 1 }, (_, i) => from + i);
 };
 
 /**

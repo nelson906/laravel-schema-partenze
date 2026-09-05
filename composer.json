@@ -3,7 +3,10 @@
     "name": "laravel/laravel",
     "type": "project",
     "description": "The skeleton application for the Laravel framework.",
-    "keywords": ["laravel", "framework"],
+    "keywords": [
+        "laravel",
+        "framework"
+    ],
     "license": "MIT",
     "require": {
         "php": "^8.2",
@@ -15,6 +18,7 @@
         "barryvdh/laravel-debugbar": "^4.2",
         "fakerphp/faker": "^1.23",
         "infection/infection": "^0.34.0",
+        "larastan/larastan": "^3.11",
         "laravel/breeze": "^2.4",
         "laravel/pail": "^1.2.2",
         "laravel/pint": "^1.24",
@@ -69,6 +73,17 @@
         ],
         "pre-package-uninstall": [
             "Illuminate\\Foundation\\ComposerScripts::prePackageUninstall"
+        ],
+        "analyse": [
+            "@php vendor/bin/phpstan analyse --memory-limit=1G"
+        ],
+        "analyse:baseline": [
+            "@php vendor/bin/phpstan analyse --memory-limit=1G --generate-baseline"
+        ],
+        "quality": [
+            "@php vendor/bin/pint --test",
+            "@php vendor/bin/phpstan analyse --memory-limit=1G",
+            "@php vendor/bin/phpunit"
         ]
     },
     "extra": {

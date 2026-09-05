@@ -7,7 +7,22 @@ use Illuminate\Support\Facades\File;
 class SystemOperations
 {
     /**
+     * Legge una chiave di config garantendo una stringa.
+     *
+     * config() e' tipizzato mixed: il cast diretto e' vietato a livello 9 e
+     * un valore non scalare finirebbe in escapeshellarg() come "Array".
+     */
+    private static function configString(string $key, string $default = ''): string
+    {
+        $value = config($key);
+
+        return is_scalar($value) ? (string) $value : $default;
+    }
+
+    /**
      * Esegui comando shell in modo sicuro
+     *
+     * @return array{success: bool, output: list<string>, exit_code: int}
      */
     private static function execCommand(string $command): array
     {
@@ -32,6 +47,9 @@ class SystemOperations
      * Unica fonte condivisa da getComposerVersion(), findComposerPath() e
      * ArubaToolsController::composerDiagnostic().
      */
+    /**
+     * @return list<string>
+     */
     public static function composerSearchPaths(): array
     {
         return [
@@ -42,8 +60,8 @@ class SystemOperations
             '/opt/alt/php81/usr/bin/composer', // Aruba CloudLinux PHP 8.1
             '/opt/alt/php82/usr/bin/composer', // Aruba CloudLinux PHP 8.2
             '/opt/alt/php83/usr/bin/composer', // Aruba CloudLinux PHP 8.3
-            getenv('HOME').'/composer',        // Home directory
-            getenv('HOME').'/bin/composer',    // Home bin
+            ((string) getenv('HOME')).'/composer',     // Home directory
+            ((string) getenv('HOME')).'/bin/composer', // Home bin
         ];
     }
 
@@ -74,6 +92,7 @@ class SystemOperations
      */
     private static function findComposerPath(): ?string
     {
+        /** @var string|null $composerPath */
         static $composerPath = null;
 
         if ($composerPath !== null) {
@@ -115,6 +134,8 @@ class SystemOperations
 
     /**
      * Composer dump-autoload (aggiornato)
+     *
+     * @return array{success: bool, output: string}
      */
     public static function composerDumpAutoload(): array
     {
@@ -138,6 +159,8 @@ class SystemOperations
 
     /**
      * Lista pacchetti Composer outdated (aggiornato)
+     *
+     * @return array{success: bool, packages: list<string>}
      */
     public static function composerOutdated(): array
     {
@@ -165,20 +188,24 @@ class SystemOperations
 
     /**
      * Backup Database MySQL
+     *
+     * @return array{success: bool, output?: string, filename?: string, filepath?: string, size?: int}
      */
     public static function backupDatabase(): array
     {
-        $connection = config('database.default');
+        // Tutti i valori finiscono in escapeshellarg(): configString()
+        // garantisce la stringa senza cast su mixed.
+        $connection = self::configString('database.default');
         $driver = config("database.connections.{$connection}.driver");
 
         if ($driver !== 'mysql') {
             return ['success' => false, 'output' => 'Solo MySQL supportato'];
         }
 
-        $database = config("database.connections.{$connection}.database");
-        $username = config("database.connections.{$connection}.username");
-        $password = config("database.connections.{$connection}.password");
-        $host = config("database.connections.{$connection}.host");
+        $database = self::configString("database.connections.{$connection}.database");
+        $username = self::configString("database.connections.{$connection}.username");
+        $password = self::configString("database.connections.{$connection}.password");
+        $host = self::configString("database.connections.{$connection}.host");
 
         $backupPath = storage_path('backups/database');
 
@@ -215,6 +242,8 @@ class SystemOperations
 
     /**
      * Lista backup database
+     *
+     * @return list<array{filename: string, size: int, date: string, path: string}>
      */
     public static function listDatabaseBackups(): array
     {
@@ -248,6 +277,8 @@ class SystemOperations
 
     /**
      * Ripristina Database da backup
+     *
+     * @return array{success: bool, output: string}
      */
     public static function restoreDatabase(string $filename): array
     {
@@ -265,11 +296,11 @@ class SystemOperations
             return ['success' => false, 'output' => 'File backup non trovato'];
         }
 
-        $connection = config('database.default');
-        $database = config("database.connections.{$connection}.database");
-        $username = config("database.connections.{$connection}.username");
-        $password = config("database.connections.{$connection}.password");
-        $host = config("database.connections.{$connection}.host");
+        $connection = self::configString('database.default');
+        $database = self::configString("database.connections.{$connection}.database");
+        $username = self::configString("database.connections.{$connection}.username");
+        $password = self::configString("database.connections.{$connection}.password");
+        $host = self::configString("database.connections.{$connection}.host");
 
         if (! self::commandExists('mysql')) {
             return ['success' => false, 'output' => 'mysql command non disponibile'];
@@ -298,6 +329,8 @@ class SystemOperations
 
     /**
      * Ottieni dimensione directory
+     *
+     * @return array{success: bool, size: string|int, path?: string}
      */
     public static function getDirectorySize(string $path): array
     {
@@ -326,6 +359,8 @@ class SystemOperations
 
     /**
      * Lista processi PHP attivi
+     *
+     * @return array{success: bool, processes: list<string>, count: int}
      */
     public static function listPhpProcesses(): array
     {
@@ -347,17 +382,20 @@ class SystemOperations
 
     /**
      * Ottieni utilizzo risorse server
+     *
+     * @return array<string, mixed>
      */
     public static function getServerLoad(): array
     {
-        $load = sys_getloadavg();
+        // sys_getloadavg() torna false su piattaforme senza load average.
+        $load = sys_getloadavg() ?: [];
 
         // Memoria
         $memResult = self::execCommand('free -m');
         $memInfo = [];
 
         if ($memResult['success'] && count($memResult['output']) > 1) {
-            $memLine = preg_split('/\s+/', $memResult['output'][1]);
+            $memLine = preg_split('/\s+/', $memResult['output'][1]) ?: [];
             $memInfo = [
                 'total' => ($memLine[1] ?? 0).' MB',
                 'used' => ($memLine[2] ?? 0).' MB',
@@ -370,7 +408,7 @@ class SystemOperations
         $diskInfo = [];
 
         if ($diskResult['success'] && count($diskResult['output']) > 1) {
-            $diskLine = preg_split('/\s+/', $diskResult['output'][1]);
+            $diskLine = preg_split('/\s+/', $diskResult['output'][1]) ?: [];
             $diskInfo = [
                 'filesystem' => $diskLine[0] ?? '',
                 'size' => $diskLine[1] ?? '',
@@ -397,6 +435,8 @@ class SystemOperations
 
     /**
      * Verifica permessi file sensibili
+     *
+     * @return array<string, array<string, mixed>>
      */
     public static function checkSensitiveFiles(): array
     {
@@ -429,6 +469,8 @@ class SystemOperations
 
     /**
      * Cerca file potenzialmente pericolosi
+     *
+     * @return array{suspicious_files: list<string>, count: int}
      */
     public static function scanForSuspiciousFiles(): array
     {

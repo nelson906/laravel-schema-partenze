@@ -50,6 +50,21 @@
                 ".*Log::(warning|error|info|debug)\\(.*"
             ]
         },
+        // Stessa logica di MethodCallRemoval: mutare il TESTO del messaggio di
+        // log (concatenazione invertita, operando rimosso) non altera nessun
+        // calcolo ne' nessuna risposta HTTP — rumore.
+        "Concat": {
+            "ignoreSourceCodeByRegex": [
+                ".*safeLog\\(.*",
+                ".*Log::(warning|error|info|debug)\\(.*"
+            ]
+        },
+        "ConcatOperandRemoval": {
+            "ignoreSourceCodeByRegex": [
+                ".*safeLog\\(.*",
+                ".*Log::(warning|error|info|debug)\\(.*"
+            ]
+        },
         "ArrayItemRemoval": {
             "ignoreSourceCodeByRegex": [
                 ".*'key' => \\$key.*",
@@ -88,8 +103,12 @@
     },
 
     // RATCHET: baseline 2026-07-19 run 1 = 53.41%, run 2 = 58.58% → soglie a 55.
+    // 2026-09-04: dopo il giro PHPStan livello 10 la run dà MSI 70% (696 mutanti,
+    // 480 killed, 198 escaped, coverage mutanti 100%) → soglie alzate a 65.
+    // 2026-09-05: test sul riporto dei minuti in getCoordinates → MSI 72%
+    // (186 escaped, i 12 del ramo `$sunrise_m >= 60` uccisi) → soglie a 70.
     // Alzare di ~5 punti ogni volta che vengono superate stabilmente.
     // Obiettivo di medio periodo: 75+ su app/Services.
-    "minMsi": 55,
-    "minCoveredMsi": 55
+    "minMsi": 70,
+    "minCoveredMsi": 70
 }

@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
 
+import { QuadrantiLogic, mergeFedergolfResponses, normalizeGaraTitle, describeAjaxFailure } from './quadranti-logic.js';
+import { DEFAULT_CONFIG, COMPETITION_FORMATS, parseForma } from './config.js';
+import { storage } from './utils.js';
+
 // Mock localStorage PRIMA dell'import dei moduli che lo usano: jsdom non
 // garantisce localStorage.getItem/setItem/removeItem stabili tra test, e senza
 // mock il try/catch dentro utils.js console.error → stderr verboso. Il mock
@@ -16,10 +20,6 @@ const localStorageMock = (() => {
 beforeAll(() => {
   vi.stubGlobal('localStorage', localStorageMock);
 });
-
-import { QuadrantiLogic, mergeFedergolfResponses, normalizeGaraTitle, describeAjaxFailure } from './quadranti-logic.js';
-import { DEFAULT_CONFIG, COMPETITION_FORMATS, parseForma } from './config.js';
-import { storage } from './utils.js';
 
 // Helper: pulisce le sole chiavi di storage che generateSingleTee/Double Tee
 // potrebbero leggere via getPlayerArrays().
@@ -794,17 +794,9 @@ describe('generateSingleTee — giro finale 54 buche', () => {
     // Estrai tutti i contenuti delle <td> "numeriche" (player cells)
     const bodyHtml = html.split('<tbody>')[1] || '';
 
-    // Le celle nere (uomini) non hanno style; quelle rosse (donne) hanno color:red
-    // Estrai i numeri da tutte le celle player (qualunque categoria).
-    const cellMatches = bodyHtml.match(/border-gray-300"[^>]*>(\d+)</g) || [];
-    const numeri = cellMatches.map(m => {
-      const r = m.match(/>(\d+)</);
-      return r ? parseInt(r[1], 10) : null;
-    }).filter(n => n !== null);
-
-    // Filtra fuori i valori "1" che corrispondono alla colonna Tee
-    // (un "1" per riga = 27 occorrenze). Per fare un check robusto contiamo
-    // direttamente la presenza di rank attesi nelle celle stile rosso (donne).
+    // Le celle nere (uomini) non hanno style; quelle rosse (donne) hanno color:red.
+    // Il check robusto usa solo le celle rosse: i "1" della colonna Tee
+    // (uno per riga) inquinerebbero un conteggio su tutte le celle.
     const redCells = bodyHtml.match(/color:red"[^>]*>(\d+)</g) || [];
     const donneRanks = redCells.map(m => parseInt(m.match(/>(\d+)</)[1], 10));
     expect(donneRanks.sort((a, b) => a - b)).toEqual(

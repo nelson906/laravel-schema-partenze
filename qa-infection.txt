@@ -1,0 +1,331 @@
+
+    ____      ____          __  _
+   /  _/___  / __/__  _____/ /_(_)___  ____
+   / // __ \/ /_/ _ \/ ___/ __/ / __ \/ __ \
+ _/ // / / / __/  __/ /__/ /_/ / /_/ / / / /
+/___/_/ /_/_/  \___/\___/\__/_/\____/_/ /_/
+
+#StandWithUkraine
+
+Infection - PHP Mutation Testing Framework version 0.34.0
+
+[notice] Running Infection with 9 threads.
+
+Running initial tests with PHPUnit version 11.5.56
+
+.: killed by tests, A: killed by SA, M: escaped, U: uncovered
+E: fatal error, X: syntax error, T: timed out, S: skipped, I: ignored
+
+
+Generate mutants...
+
+Processing source code files...
+................................M...........M.MM.M   (   50)
+M...M.M..M.M.MM.MMMMMMMMMMM....MMMMMMM..MMMMM.....   (  100)
+M...MMM.MMMMM........M.M.MM.....M.MM....M...MM.MMM   (  150)
+.M.MIIM.MMMM..MMM.IIIIIIIM.......M.I...IM.M.....MM   (  200)
+M........M.MM..M............M...M...........MMMMMM   (  250)
+............II......MMM..........M.MM.....MM.....M   (  300)
+M....MMM...MMM.........MMMMM........MMMM......I...   (  350)
+...IM....MXM....MMMM.MMI.....M....MMMM....MMMMM.M.   (  400)
+.MMMM......MMMMMMMM..MMM...........MM........M....   (  450)
+M...M...M.............M....MM...............M.....   (  500)
+....................MM....................MMMM....   (  550)
+....M.................MMMMM...MMMMMM...........MMM   (  600)
+MM...........................M......M.............   (  650)
+..MM.........................I.............MMM
+Escaped mutants:
+================
+
+
+1) /Users/iMac/Sites/laravel-schema-partenze/app/Http/Controllers/Admin/UserController.php:28    [M] DecrementInteger [ID] 9fc5af9c90ffbd049d071d5f15568fd4
+
+@@ @@
+ {
+     public function index(): View
+     {
+-        $users = User::orderBy('user_type')->orderBy('name')->paginate(20);
++        $users = User::orderBy('user_type')->orderBy('name')->paginate(19);
+ 
+         return view('admin.users.index', compact('users'));
+     }
+
+
+2) /Users/iMac/Sites/laravel-schema-partenze/app/Http/Controllers/Admin/UserController.php:28    [M] IncrementInteger [ID] e2cacfac93d357153dc6397afb27125a
+
+@@ @@
+ {
+     public function index(): View
+     {
+-        $users = User::orderBy('user_type')->orderBy('name')->paginate(20);
++        $users = User::orderBy('user_type')->orderBy('name')->paginate(21);
+ 
+         return view('admin.users.index', compact('users'));
+     }
+
+
+3) /Users/iMac/Sites/laravel-schema-partenze/app/Http/Controllers/Admin/UserController.php:42    [M] ArrayItemRemoval [ID] a7775a5ccbc34625984b4f0a49a5e025
+
+@@ @@
+     public function store(Request $request): RedirectResponse
+     {
+         $request->validate([
+-            'name'      => 'required|string|max:255',
+             'email'     => 'required|email|max:255|unique:users,email',
+             'password'  => ['required', 'confirmed', Password::min(8)],
+             'user_type' => ['required', Rule::in(array_keys($this->allowedUserTypes()))],
+
+
+4) /Users/iMac/Sites/laravel-schema-partenze/app/Http/Controllers/Admin/UserController.php:45    [M] IncrementInteger [ID] b632cf705cdb4401f86cb37470824f2c
+
+@@ @@
+         $request->validate([
+             'name'      => 'required|string|max:255',
+             'email'     => 'required|email|max:255|unique:users,email',
+-            'password'  => ['required', 'confirmed', Password::min(8)],
++            'password'  => ['required', 'confirmed', Password::min(9)],
+             'user_type' => ['required', Rule::in(array_keys($this->allowedUserTypes()))],
+             'is_active' => 'sometimes|boolean',
+         ]);
+
+
+5) /Users/iMac/Sites/laravel-schema-partenze/app/Http/Controllers/Admin/UserController.php:45    [M] ArrayItemRemoval [ID] 15a1e801c56a2fc14568793d247fbeb6
+
+@@ @@
+         $request->validate([
+             'name'      => 'required|string|max:255',
+             'email'     => 'required|email|max:255|unique:users,email',
+-            'password'  => ['required', 'confirmed', Password::min(8)],
++            'password'  => ['confirmed', Password::min(8)],
+             'user_type' => ['required', Rule::in(array_keys($this->allowedUserTypes()))],
+             'is_active' => 'sometimes|boolean',
+         ]);
+
+
+6) /Users/iMac/Sites/laravel-schema-partenze/app/Http/Controllers/Admin/UserController.php:45    [M] DecrementInteger [ID] 610db2d610b4b510039bc8fbaab76e98
+
+@@ @@
+         $request->validate([
+             'name'      => 'required|string|max:255',
+             'email'     => 'required|email|max:255|unique:users,email',
+-            'password'  => ['required', 'confirmed', Password::min(8)],
++            'password'  => ['required', 'confirmed', Password::min(7)],
+             'user_type' => ['required', Rule::in(array_keys($this->allowedUserTypes()))],
+             'is_active' => 'sometimes|boolean',
+         ]);
+
+
+7) /Users/iMac/Sites/laravel-schema-partenze/app/Http/Controllers/Admin/UserController.php:46    [M] ArrayItemRemoval [ID] 867eb78fb0a9bf8966e7e1c296872069
+
+@@ @@
+             'name'      => 'required|string|max:255',
+             'email'     => 'required|email|max:255|unique:users,email',
+             'password'  => ['required', 'confirmed', Password::min(8)],
+-            'user_type' => ['required', Rule::in(array_keys($this->allowedUserTypes()))],
++            'user_type' => [Rule::in(array_keys($this->allowedUserTypes()))],
+             'is_active' => 'sometimes|boolean',
+         ]);
+ 
+
+
+8) /Users/iMac/Sites/laravel-schema-partenze/app/Http/Controllers/Admin/UserController.php:57    [M] TrueValue [ID] bf67c1ee62defe9a7721d9b122bf2f21
+
+@@ @@
+             'email'     => $request->string('email')->toString(),
+             'password'  => Hash::make($request->string('password')->toString()),
+             'user_type' => $request->string('user_type')->toString(),
+-            'is_active' => $request->boolean('is_active', true),
++            'is_active' => $request->boolean('is_active', false),
+         ]);
+ 
+         return redirect()->route('admin.users.index')->with('success', 'Utente creato.');
+
+
+9) /Users/iMac/Sites/laravel-schema-partenze/app/Http/Controllers/Admin/UserController.php:57    [M] ArrayItem [ID] 54dc9b750299fd54beb232f24b6cc2b8
+
+@@ @@
+             'email'     => $request->string('email')->toString(),
+             'password'  => Hash::make($request->string('password')->toString()),
+             'user_type' => $request->string('user_type')->toString(),
+-            'is_active' => $request->boolean('is_active', true),
++            'is_active' > $request->boolean('is_active', true),
+         ]);
+ 
+         return redirect()->route('admin.users.index')->with('success', 'Utente creato.');
+
+
+10) /Users/iMac/Sites/laravel-schema-partenze/app/Http/Controllers/Admin/UserController.php:77    [M] ArrayItemRemoval [ID] d7d6cd27c25cd877d3ab18654529001e
+
+@@ @@
+         $this->guardCanEdit($user);
+ 
+         $request->validate([
+-            'name'      => 'required|string|max:255',
+             'email'     => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
+             'password'  => ['nullable', 'confirmed', Password::min(8)],
+             'user_type' => ['required', Rule::in(array_keys($this->allowedUserTypes()))],
+
+
+11) /Users/iMac/Sites/laravel-schema-partenze/app/Http/Controllers/Admin/UserController.php:77    [M] MethodCallRemoval [ID] 061715e896af7b1c2be83e4f580a93b4
+
+@@ @@
+     {
+         $this->guardCanEdit($user);
+ 
+-        $request->validate([
+-            'name'      => 'required|string|max:255',
+-            'email'     => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
+-            'password'  => ['nullable', 'confirmed', Password::min(8)],
+-            'user_type' => ['required', Rule::in(array_keys($this->allowedUserTypes()))],
+-            'is_active' => 'sometimes|boolean',
+-        ]);
++        
+ 
+         $userType = $request->string('user_type')->toString();
+ 
+
+
+12) /Users/iMac/Sites/laravel-schema-partenze/app/Http/Controllers/Admin/UserController.php:79    [M] ArrayItemRemoval [ID] b63b5fa0436f6e49064182ea80e94de0
+
+@@ @@
+ 
+         $request->validate([
+             'name'      => 'required|string|max:255',
+-            'email'     => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
++            'email'     => ['email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
+             'password'  => ['nullable', 'confirmed', Password::min(8)],
+             'user_type' => ['required', Rule::in(array_keys($this->allowedUserTypes()))],
+             'is_active' => 'sometimes|boolean',
+
+
+13) /Users/iMac/Sites/laravel-schema-partenze/app/Http/Controllers/Admin/UserController.php:80    [M] DecrementInteger [ID] 0c0cae410d3696ec58e8e0aac53fc7ea
+
+@@ @@
+         $request->validate([
+             'name'      => 'required|string|max:255',
+             'email'     => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
+-            'password'  => ['nullable', 'confirmed', Password::min(8)],
++            'password'  => ['nullable', 'confirmed', Password::min(7)],
+             'user_type' => ['required', Rule::in(array_keys($this->allowedUserTypes()))],
+             'is_active' => 'sometimes|boolean',
+         ]);
+
+
+14) /Users/iMac/Sites/laravel-schema-partenze/app/Http/Controllers/Admin/UserController.php:80    [M] IncrementInteger [ID] 6319e4d131b136371b4cfd0f5beb633c
+
+@@ @@
+         $request->validate([
+             'name'      => 'required|string|max:255',
+             'email'     => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
+-            'password'  => ['nullable', 'confirmed', Password::min(8)],
++            'password'  => ['nullable', 'confirmed', Password::min(9)],
+             'user_type' => ['required', Rule::in(array_keys($this->allowedUserTypes()))],
+             'is_active' => 'sometimes|boolean',
+         ]);
+
+
+15) /Users/iMac/Sites/laravel-schema-partenze/app/Http/Controllers/Admin/UserController.php:80    [M] ArrayItemRemoval [ID] 49af27b1ac3476eefa206c922f2173a9
+
+@@ @@
+         $request->validate([
+             'name'      => 'required|string|max:255',
+             'email'     => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
+-            'password'  => ['nullable', 'confirmed', Password::min(8)],
++            'password'  => ['confirmed', Password::min(8)],
+             'user_type' => ['required', Rule::in(array_keys($this->allowedUserTypes()))],
+             'is_active' => 'sometimes|boolean',
+         ]);
+
+
+16) /Users/iMac/Sites/laravel-schema-partenze/app/Http/Controllers/Admin/UserController.php:81    [M] UnwrapArrayKeys [ID] 5c38368c02aa11f2ba03549e3079b758
+
+@@ @@
+             'name'      => 'required|string|max:255',
+             'email'     => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
+             'password'  => ['nullable', 'confirmed', Password::min(8)],
+-            'user_type' => ['required', Rule::in(array_keys($this->allowedUserTypes()))],
++            'user_type' => ['required', Rule::in($this->allowedUserTypes())],
+             'is_active' => 'sometimes|boolean',
+         ]);
+ 
+
+
+17) /Users/iMac/Sites/laravel-schema-partenze/app/Http/Controllers/Admin/UserController.php:81    [M] ArrayItemRemoval [ID] 6bc785d1c60846a042f8d2caf4cc46e3
+
+@@ @@
+             'name'      => 'required|string|max:255',
+             'email'     => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
+             'password'  => ['nullable', 'confirmed', Password::min(8)],
+-            'user_type' => ['required', Rule::in(array_keys($this->allowedUserTypes()))],
++            'user_type' => [Rule::in(array_keys($this->allowedUserTypes()))],
+             'is_active' => 'sometimes|boolean',
+         ]);
+ 
+
+
+18) /Users/iMac/Sites/laravel-schema-partenze/app/Http/Controllers/Admin/UserController.php:88    [M] NullSafePropertyCall [ID] 6dbc2ea1805f54d45670524579522e0b
+
+@@ @@
+         $userType = $request->string('user_type')->toString();
+ 
+         // L'utente loggato NON può cambiare il proprio user_type (anti-promozione)
+-        if ($user->id === auth()->id() && $userType !== $user->user_type?->value) {
++        if ($user->id === auth()->id() && $userType !== $user->user_type->value) {
+             return back()->withErrors(['user_type' => 'Non puoi cambiare il tuo stesso ruolo.']);
+         }
+ 
+
+
+19) /Users/iMac/Sites/laravel-schema-partenze/app/Http/Controllers/Admin/UserController.php:88    [M] LogicalAnd [ID] 095277df8da69abb0d42b6b0fd7752e0
+
+@@ @@
+         $userType = $request->string('user_type')->toString();
+ 
+         // L'utente loggato NON può cambiare il proprio user_type (anti-promozione)
+-        if ($user->id === auth()->id() && $userType !== $user->user_type?->value) {
++        if ($user->id === auth()->id() || $userType !== $user->user_type?->value) {
+             return back()->withErrors(['user_type' => 'Non puoi cambiare il tuo stesso ruolo.']);
+         }
+ 
+
+
+20) /Users/iMac/Sites/laravel-schema-partenze/app/Http/Controllers/Admin/UserController.php:109    [M] MethodCallRemoval [ID] e9e29d5f086af3631fe80717b13cde91
+
+@@ @@
+ 
+     public function destroy(User $user): RedirectResponse
+     {
+-        $this->guardCanEdit($user);
++        
+ 
+         if ($user->id === auth()->id()) {
+             return back()->with('error', 'Non puoi eliminare te stesso.');
+
+
+... and 166 more mutants were omitted. Use "--show-mutations=max" to see all of them.
+
+
+696 mutations were generated:
+     492 mutants were killed by Test Framework
+      17 mutants were configured to be ignored
+     186 covered mutants were not detected
+       1 syntax errors were encountered
+
+Metrics:
+         Mutation Code Coverage: 100%
+         Covered Code MSI: 72%
+
+Please note that some mutants will inevitably be harmless (i.e. false positives).
+
+Generated Reports:
+         - /Users/iMac/Sites/laravel-schema-partenze/storage/logs/infection.log
+         - /Users/iMac/Sites/laravel-schema-partenze/storage/logs/infection.html
+         - /Users/iMac/Sites/laravel-schema-partenze/storage/logs/infection-summary.log
+ ! [NOTE] The MSI is 7.61% percentage points over the required MSI. Consider increasing the required MSI percentage the 
+ !        next time you run Infection.                                                                                  
+
+ ! [NOTE] The Covered Code MSI is 7.61% percentage points over the required Covered Code MSI. Consider increasing the   
+ !        required Covered Code MSI percentage the next time you run Infection.                                         
+
+
+Time: 1m 44s. Memory: 0.06GB. Threads: 9

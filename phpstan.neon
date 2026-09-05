@@ -1,0 +1,36 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    # Livello 10 = massimo. Oltre al 9 vieta di USARE un valore dichiarato
+    # `mixed` senza prima restringerlo: ogni dato che entra da federgolf,
+    # da un .xlsx o da validate() va verificato, non solo castato.
+    level: 10
+
+    paths:
+        - app
+        - database
+        - routes
+        - tests
+
+    # I mirror _overrides_* sono copie 1:1 di file gia' analizzati:
+    # analizzarli duplicherebbe ogni errore.
+    excludePaths:
+        analyseAndScan:
+            - _overrides_admin
+            - _overrides_quadranti
+            - Schemi partenze
+            - vendor
+            - node_modules
+
+    # I docblock @param/@return che aggiungiamo noi non devono generare
+    # errori "always true/false" nei guard difensivi sui dati di terzi.
+    treatPhpDocTypesAsCertain: false
+
+    # Aruba: memoria del CLI limitata, la cache locale evita rianalisi complete.
+    tmpDir: storage/framework/cache/phpstan
+
+    # Nessun ignoreErrors: gli errori si correggono nel codice. Se serve
+    # congelare il residuo, generare un baseline con
+    #   vendor/bin/phpstan analyse --memory-limit=1G --generate-baseline
+    # e aggiungere `- phpstan-baseline.neon` sotto `includes`.

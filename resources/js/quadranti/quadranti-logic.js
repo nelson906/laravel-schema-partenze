@@ -10,8 +10,7 @@ import {
     COMPETITION_TYPES,
     COMPETITION_FORMATS,
     parseForma,
-    ROUND_TYPES,
-    COMPACT_TYPES
+    ROUND_TYPES
 } from './config.js';
 
 import {
@@ -19,8 +18,6 @@ import {
     addTime,
     halfTime,
     storage,
-    formatDate,
-    chunkArray,
     escapeHtml
 } from './utils.js';
 
@@ -43,7 +40,7 @@ export class QuadrantiLogic {
 
     /**
      * Initializes datepicker with Italian localization
-     * @param {jQuery} $ - jQuery instance
+     * @param {any} $ - istanza jQuery (globale caricata dalla Blade)
      */
     initializeDatepicker($) {
         $.datepicker.regional['it'] = DATEPICKER_IT;
@@ -90,7 +87,7 @@ export class QuadrantiLogic {
      * @returns {Object} Quadrant distribution
      */
     bilanciaQuadranti(players, mod = 3, maxEarlySlots = null) {
-        let totalMatches = Math.ceil(players / mod);
+        const totalMatches = Math.ceil(players / mod);
 
         // Start with equal distribution
         let Q1 = Math.floor(totalMatches / 4);
@@ -99,7 +96,7 @@ export class QuadrantiLogic {
         let Q4 = Math.floor(totalMatches / 4);
 
         // Distribute remainder (natural: Early first)
-        let remainder = totalMatches % 4;
+        const remainder = totalMatches % 4;
         if (remainder > 0) Q1++;
         if (remainder > 1) Q2++;
         if (remainder > 2) Q4++;
@@ -142,25 +139,25 @@ export class QuadrantiLogic {
         const quadranti = this.bilanciaQuadranti(players, mod, maxEarlySlots);
 
         // Calculate total flights
-        let sumQuadranti = quadranti.Q1 + quadranti.Q2 + quadranti.Q3 + quadranti.Q4;
+        const sumQuadranti = quadranti.Q1 + quadranti.Q2 + quadranti.Q3 + quadranti.Q4;
 
         // Calculate players per quadrant
         let playersQ1 = mod * quadranti.Q1;
-        let playersQ2 = mod * quadranti.Q2;
-        let playersQ3 = mod * quadranti.Q3;
-        let playersQ4 = mod * quadranti.Q4;
+        const playersQ2 = mod * quadranti.Q2;
+        const playersQ3 = mod * quadranti.Q3;
+        const playersQ4 = mod * quadranti.Q4;
 
         // Handle incomplete flights (difference between full capacity and actual players)
-        let fullPlayers = sumQuadranti * mod;
-        let difference = fullPlayers - players;
+        const fullPlayers = sumQuadranti * mod;
+        const difference = fullPlayers - players;
 
         // Remove difference from Q1 (incomplete flight handling)
         playersQ1 = playersQ1 - difference;
 
         // Calculate limits for player distribution
-        let limit1 = playersQ2;                           // End of Q2
-        let limit2 = playersQ2 + playersQ1;              // End of Q1 (Q2+Q1)
-        let limit3 = players - playersQ3;                // Start of Q3
+        const limit1 = playersQ2;                           // End of Q2
+        const limit2 = playersQ2 + playersQ1;              // End of Q1 (Q2+Q1)
+        const limit3 = players - playersQ3;                // Start of Q3
 
         return {
             limit1,
@@ -196,8 +193,8 @@ export class QuadrantiLogic {
      */
     getPlayerArrays() {
         const nominativo = this.config.nominativo;
-        const players = parseInt(this.config.players) || 0;
-        const proette = parseInt(this.config.proette) || 0;
+        const players = parseInt(this.config.players, 10) || 0;
+        const proette = parseInt(this.config.proette, 10) || 0;
 
         let atleti = storage.get('atleti', []);
         let atlete = storage.get('atlete', []);
@@ -557,7 +554,7 @@ export class QuadrantiLogic {
      *
      * @param {number} earlyFlights  voli totali in sessione Early (Tee1+Tee10).
      *   È deciso dal chiamante (women-aware nei giri con donne); il resto va Late.
-     * @returns {{early:{tee1:[],tee10:[]}, late:{tee1:[],tee10:[]}}}
+     * @returns {{early:{tee1:Array,tee10:Array}, late:{tee1:Array,tee10:Array}}}
      */
     buildURQuadrants(N, mod, source, internal = 'asc', earlyFlights = null, opts = {}) {
         const empty = { early: { tee1: [], tee10: [] }, late: { tee1: [], tee10: [] } };
@@ -594,8 +591,8 @@ export class QuadrantiLogic {
         // Conteggi per quadrante. Il twosome (difference) va in Q1 (Tee 1 Early) se
         // c'è Early, altrimenti in Q3 (Tee 1 Late). Q1/Q3 = Tee 1 = SEMPRE la metà
         // del proprio lato che apre quel tee (mappata su ranghi via verso più sotto).
-        const q1f = Math.floor(eF / 2), q2f = eF - q1f;   // Early: Q1 Tee1, Q2 Tee10
-        const q3f = Math.floor(lF / 2), q4f = lF - q3f;   // Late:  Q3 Tee1, Q4 Tee10
+        const q1f = Math.floor(eF / 2);   // Early: Q1 Tee1, Q2 Tee10 = eF - q1f
+        const q3f = Math.floor(lF / 2);   // Late:  Q3 Tee1, Q4 Tee10 = lF - q3f
         const earlyPlayers = eF > 0 ? Math.max(0, eF * mod - d) : 0;
         const latePlayers  = N - earlyPlayers;
         let q1p, q2p, q3p, q4p;
@@ -689,7 +686,7 @@ export class QuadrantiLogic {
    * FIG. È il punto di rendering condiviso da tutti i formati a blocchi.
    *
    * @param {Array} costruiti  blocchi con tee1/tee10 già pronti
-   * @param {boolean} reversedTriplet  se true la riga vuota separa solo Early/Late
+   * @param {boolean} [blankAtCrossingOnly]  se true la riga vuota separa solo Early/Late
    * @returns {string} HTML (info box + tabella)
    */
   renderBlocchi(costruiti, blankAtCrossingOnly = false) {
@@ -765,9 +762,9 @@ export class QuadrantiLogic {
    * @returns {string} HTML table content
    */
   generateDoubleTee(round) {
-    const mod = parseInt(this.config.playersPerFlight) || 3;
-    const players = parseInt(this.config.players) || 0;
-    const proette = parseInt(this.config.proette) || 0;
+    const mod = parseInt(this.config.playersPerFlight, 10) || 3;
+    const players = parseInt(this.config.players, 10) || 0;
+    const proette = parseInt(this.config.proette, 10) || 0;
     const garaNT = this.config.garaNT;
 
     // ── Dispatch data-driven formato/giro ──────────────────────────────
@@ -792,17 +789,15 @@ export class QuadrantiLogic {
     // flusso di qualificazione storico.
     const sezEarly = roundDesc && roundDesc.early ? parseForma(roundDesc.early) : null;
     const sezLate  = roundDesc && roundDesc.late  ? parseForma(roundDesc.late)  : null;
-    const isBloccoUR = !!(
-      sezEarly && sezLate
-      && sezEarly.forma === 'UR' && sezLate.forma === 'UR'
-    );
+    const isBloccoUR = Boolean(sezEarly && sezLate
+      && sezEarly.forma === 'UR' && sezLate.forma === 'UR');
     // Giri a sessioni miste (Prova di gioco): metà campo per ranghi a sessione,
     // forma per-sessione anche 'S' (entrambi i tee nella stessa direzione).
-    const isSessioniMiste = !!(roundDesc && roundDesc.earlyHalf && sezEarly && sezLate);
+    const isSessioniMiste = Boolean(roundDesc && roundDesc.earlyHalf && sezEarly && sezLate);
     // Cerchio/clessidra (54/72 1°-2°, patrocinate/trofei 1°): forma mista (∩+∪).
     // Ora passa dal MOTORE UNICO (buildURQuadrants + renderBlocchi), non più dal
     // vecchio generate54/36HoleTableNew.
-    const isCerchio = !!(roundDesc && roundDesc.layout === 'cerchio');
+    const isCerchio = Boolean(roundDesc && roundDesc.layout === 'cerchio');
 
     // Reset buffer Vista FIG: buildGroupTableRows lo riempie durante il render.
     this._figFlightsBuffer = [];
@@ -815,10 +810,10 @@ export class QuadrantiLogic {
     // - Giro 'men-only' (4° giro 72 buche): nessuna donna (proetteFinal = 0).
     // Implementato inline (no nuove funzioni come richiesto).
     if (isFinaleRound) {
-      const playersFinal = parseInt(this.config.playersCut) || players;
+      const playersFinal = parseInt(this.config.playersCut, 10) || players;
       const proetteFinal = isMenOnlyRound
         ? 0
-        : (parseInt(this.config.proetteCut) || proette);
+        : (parseInt(this.config.proetteCut, 10) || proette);
       const colors = TABLE_COLORS.teeColors;
 
       // Finale per classifica, doppio tee — via MOTORE UNICO (renderQuadranti).
@@ -889,7 +884,6 @@ export class QuadrantiLogic {
       // Blocco 2: donne (entrambi tee simultanei) — partono dopo gli uomini
       if (proetteFinal > 0) {
         bodyHtml += '<tr><td colspan="20" class="py-2">&nbsp;</td></tr>';
-        const startMaleNum = maleTee1.length + maleTee10.length + 1;
         bodyHtml += this.buildGroupTableRows(
           femTee1, femTee10,
           TABLE_COLORS.women,
@@ -938,9 +932,7 @@ export class QuadrantiLogic {
     // Aggiungere un nuovo tipo = nuova voce in blocchiBuilders + layout:'nome' in config.js.
     // Numerico o nominativo secondo config. I giri 'finale' sono già intercettati da isFinaleRound.
     if (isBloccoUR || isSessioniMiste || isCerchio) {
-      const reversedTriplet = roundDesc ? !!roundDesc.reversed : false;
-      const colors = TABLE_COLORS.teeColors;
-      const gap = this.config.gap;
+      const reversedTriplet = roundDesc ? Boolean(roundDesc.reversed) : false;
 
       // Dati giocatori: nomi (nominativo='On') o numeri di rango (nominativo='Off').
       const { atleti: menRanks, atlete: womenRanks } = this.getPlayerArrays();
@@ -1124,7 +1116,7 @@ export class QuadrantiLogic {
         let html = '';
         let currentTime = startTime;
         let matchNumber = startNumber;
-        const mod = parseInt(this.config.playersPerFlight);
+        const mod = parseInt(this.config.playersPerFlight, 10);
         const showRemove = this.config.nominativo === 'On';
 
         const renderCell = (group, j) => {
@@ -1196,12 +1188,13 @@ export class QuadrantiLogic {
     /**
      * Generates table header
      * @param {boolean} doubleTee - Whether double tee configuration
+     * @param {number|string|null} [modOverride] - mod proprio del giro
      * @returns {string} HTML table header
      */
-    generateTableHeader(doubleTee, modOverride) {
+    generateTableHeader(doubleTee, modOverride = null) {
         // modOverride: usato dai giri con mod proprio (es. finale a coppie,
         // flight da 2) al posto del playersPerFlight di config.
-        const mod = parseInt(modOverride) || parseInt(this.config.playersPerFlight);
+        const mod = parseInt(String(modOverride), 10) || parseInt(String(this.config.playersPerFlight), 10);
         let header = '<thead class="bg-gray-50"><tr>';
         header += '<th class="text-center px-2 py-2 border border-gray-300">Flight</th>';
         header += '<th class="text-center px-2 py-2 border border-gray-300">Tee</th>';
@@ -1571,9 +1564,9 @@ export class QuadrantiLogic {
      * @returns {string} HTML table content
      */
     generateSingleTee(round) {
-        let mod = parseInt(this.config.playersPerFlight);
-        const players = parseInt(this.config.players);
-        const proette = parseInt(this.config.proette);
+        let mod = parseInt(this.config.playersPerFlight, 10);
+        const players = parseInt(this.config.players, 10);
+        const proette = parseInt(this.config.proette, 10);
         const garaNT = this.config.garaNT;
 
         // Dispatch data-driven: il descrittore COMPETITION_FORMATS dice se il
@@ -1592,7 +1585,7 @@ export class QuadrantiLogic {
         // `coppie.pausaOgni` match. Il mod del descrittore SOSTITUISCE il
         // playersPerFlight di config per questo giro.
         const coppie = roundDesc && roundDesc.coppie ? roundDesc.coppie : null;
-        if (coppie) mod = parseInt(coppie.mod) || 2;
+        if (coppie) mod = parseInt(coppie.mod, 10) || 2;
 
         // Nel giro finale i partecipanti sono i QUALIFICATI dopo il taglio,
         // letti dai campi separati playersCut/proetteCut. Possono essere
@@ -1600,12 +1593,12 @@ export class QuadrantiLogic {
         // (utente non li ha ancora compilati). Nei giri 'men-only' (4° giro
         // della Gara 72 buche) non ci sono donne: proetteFinal = 0.
         const playersFinal = isFinal
-            ? (parseInt(this.config.playersCut) || players)
+            ? (parseInt(this.config.playersCut, 10) || players)
             : players;
         const proetteFinal = isMenOnlyRound
             ? 0
             : (isFinal
-                ? (parseInt(this.config.proetteCut) || proette)
+                ? (parseInt(this.config.proetteCut, 10) || proette)
                 : proette);
 
         let allGroups;
@@ -1636,7 +1629,7 @@ export class QuadrantiLogic {
                 for (let j = 0; j < mod && (i - j) >= 0; j++) group.push(ranksM[i - j]);
                 allGroups.push({ players: group, category: 'M' });
             }
-            const ogni = parseInt(coppie.pausaOgni) || 0;
+            const ogni = parseInt(coppie.pausaOgni, 10) || 0;
             if (ogni > 0) {
                 for (let i = ogni - 1; i < allGroups.length - 1; i += ogni) {
                     const restanti = allGroups.length - (i + 1);
@@ -1814,9 +1807,9 @@ export function normalizeGaraTitle(title) {
  *   - Il caller decide se applicare i risultati guardando atleti+atlete e
  *     warnings (semplice e prevedibile, niente flag "abort" da interpretare).
  *
- * @param {Object} args
- * @param {Object|null} args.maschileResponse - Response per la gara maschile (o null se non richiesta)
- * @param {Object|null} args.femminileResponse - Response per la gara femminile (o null se non richiesta)
+ * @param {Object} [args]
+ * @param {Object|null} [args.maschileResponse] - Response per la gara maschile (o null se non richiesta)
+ * @param {Object|null} [args.femminileResponse] - Response per la gara femminile (o null se non richiesta)
  * @returns {{atleti: string[], atlete: string[], warnings: string[], severity: string|null, states: Object}}
  */
 export function mergeFedergolfResponses({ maschileResponse = null, femminileResponse = null } = {}) {

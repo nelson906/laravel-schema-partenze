@@ -9,6 +9,8 @@ class SystemInfo
 {
     /**
      * Ottieni informazioni sul sistema
+     *
+     * @return array<string, mixed>
      */
     public static function get(): array
     {
@@ -29,6 +31,8 @@ class SystemInfo
 
     /**
      * Verifica permessi cartelle critiche
+     *
+     * @return array<string, array{path: string, exists: bool, writable: bool, permissions: string}>
      */
     public static function checkPermissions(): array
     {
@@ -57,11 +61,13 @@ class SystemInfo
 
     /**
      * Ottieni statistiche database (compatibile con vari setup)
+     *
+     * @return array<string, mixed>
      */
     public static function getDatabaseStats(): array
     {
         try {
-            $connection = config('database.default');
+            $connection = self::configString('database.default');
             $driver = config("database.connections.{$connection}.driver");
 
             // Adatta query in base al driver
@@ -93,21 +99,45 @@ class SystemInfo
     }
 
     /**
-     * Formatta bytes in formato leggibile
+     * Legge una chiave di config garantendo una stringa.
+     *
+     * config() e' tipizzato mixed: il cast diretto e' vietato a livello 9 e
+     * un valore non scalare (array di connessione mal configurato) darebbe
+     * comunque "Array to string conversion" a runtime.
      */
-    private static function formatBytes($bytes): string
+    private static function configString(string $key, string $default = ''): string
     {
-        $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        $value = config($key);
 
-        for ($i = 0; $bytes > 1024 && $i < count($units) - 1; $i++) {
-            $bytes /= 1024;
+        return is_scalar($value) ? (string) $value : $default;
+    }
+
+    /**
+     * Formatta bytes in formato leggibile.
+     *
+     * Accetta anche `false`: disk_free_space()/File::size() lo restituiscono
+     * quando il path non e' leggibile (tipico su hosting condiviso Aruba).
+     */
+    private static function formatBytes(float|int|false $bytes): string
+    {
+        if ($bytes === false) {
+            return 'N/A';
         }
 
-        return round($bytes, 2).' '.$units[$i];
+        $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        $value = (float) $bytes;
+
+        for ($i = 0; $value > 1024 && $i < count($units) - 1; $i++) {
+            $value /= 1024;
+        }
+
+        return round($value, 2).' '.$units[$i];
     }
 
     /**
      * Ottieni ultimi log
+     *
+     * @return array<string, mixed>
      */
     public static function getLatestLogs(int $lines = 50): array
     {

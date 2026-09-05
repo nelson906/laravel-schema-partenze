@@ -211,13 +211,13 @@ class QuadrantiApp {
     const fmtCut = COMPETITION_FORMATS[this.config.garaNT];
     if (fmtCut && fmtCut.cutFixed) {
       if (cat === 'M') {
-        const reg = parseInt(this.config.players) || 0;
+        const reg = parseInt(this.config.players, 10) || 0;
         const cut = Math.min(fmtCut.cutFixed.players || 0, reg);
         this.config.playersCut = cut;
         storage.set('playersCut', cut);
         $('#players_cut').val(cut);
       } else {
-        const reg = parseInt(this.config.proette) || 0;
+        const reg = parseInt(this.config.proette, 10) || 0;
         const cut = Math.min(fmtCut.cutFixed.proette || 0, reg);
         this.config.proetteCut = cut;
         storage.set('proetteCut', cut);
@@ -246,7 +246,7 @@ class QuadrantiApp {
     };
 
     if (cat === 'M') {
-      const reg = parseInt(this.config.players) || 0;
+      const reg = parseInt(this.config.players, 10) || 0;
       let cut;
       if (reg <= 0) cut = 0;
       else if (reg >= 67) cut = 54;
@@ -256,7 +256,7 @@ class QuadrantiApp {
       storage.set('playersCut', cut);
       $('#players_cut').val(cut);
     } else {
-      const reg = parseInt(this.config.proette) || 0;
+      const reg = parseInt(this.config.proette, 10) || 0;
       let cut;
       if (reg <= 0) cut = 0;
       else if (reg >= 33) cut = 27;
@@ -478,7 +478,7 @@ $('#fig-strip').on('click', '#fig-strip-copy', (e) => {
     }
 
     // Cloniamo per rimuovere i pulsanti × dal foglio Excel senza toccare la UI.
-    const clone = target.cloneNode(true);
+    const clone = /** @type {HTMLElement} */ (target.cloneNode(true));
     clone.querySelectorAll('.qd-remove').forEach(el => el.remove());
 
     const wb = XLSX.utils.table_to_book(clone, { sheet: 'Partenze' });
@@ -731,10 +731,10 @@ $('#fig-strip').on('click', '#fig-strip-copy', (e) => {
    * Toggles compact option visibility based on player count
    */
   toggleCompactOption() {
-    const players = parseInt(this.config.players) || 0;
-    const proette = parseInt(this.config.proette) || 0;
+    const players = parseInt(this.config.players, 10) || 0;
+    const proette = parseInt(this.config.proette, 10) || 0;
     const totalPlayers = players + proette;
-    const mod = parseInt(this.config.playersPerFlight);
+    const mod = parseInt(this.config.playersPerFlight, 10);
 
     if (totalPlayers <= mod * 32) {
       $('.compatto').show();
@@ -756,7 +756,6 @@ $('#fig-strip').on('click', '#fig-strip-copy', (e) => {
    */
   updateNominativoButtons() {
     const displayNominativo = storage.get('display1', 'true');
-    const displayNumerico = storage.get('display2', 'false');
 
     if (displayNominativo === 'true') {
       $('#2').hide();

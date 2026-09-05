@@ -1,0 +1,16 @@
+{
+  "// nota": "Nessun TypeScript nel progetto: checkJs type-checka i .js con i JSDoc gia' presenti. Serve solo a `npm run typecheck`, non al build (Vite non lo legge).",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": false,
+    "skipLibCheck": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+  },
+  "include": ["resources/js/quadranti/*.js", "resources/js/types/*.d.ts"],
+  "exclude": ["node_modules", "resources/js/**/*.test.js", "_overrides_admin", "_overrides_quadranti"]
+}

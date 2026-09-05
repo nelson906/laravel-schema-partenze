@@ -2,9 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
+use Illuminate\View\View;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 /**
  * QuadrantiController — Simulatore tempi di partenza (quadranti).
@@ -21,20 +25,16 @@ class QuadrantiController extends Controller
 {
     /**
      * Display the Quadranti (Starting Times Simulator) interface
-     *
-     * @return \Illuminate\View\View
      */
-    public function index()
+    public function index(): View
     {
         return view('quadranti.index');
     }
 
     /**
      * Handle Excel file upload for player names
-     *
-     * @return \Illuminate\Http\JsonResponse
      */
-    public function uploadExcel(Request $request)
+    public function uploadExcel(Request $request): JsonResponse
     {
         $request->validate([
             'file' => 'required|mimes:xlsx,xls,csv|max:2048',
@@ -42,19 +42,26 @@ class QuadrantiController extends Controller
 
         try {
             $uploadedFile = $request->file('file');
+
+            // La regola 'required|mimes' garantisce un singolo file valido:
+            // il guard serve solo a PHPStan (file() puo' tornare array|null).
+            if (! $uploadedFile instanceof UploadedFile) {
+                return response()->json(['error' => 'Nessun file ricevuto'], 422);
+            }
+
             $spreadsheet = IOFactory::load($uploadedFile->getPathname());
 
             $atlete = [];
             $atleti = [];
 
-            if ($spreadsheet->sheetNameExists('Atlete')) {
-                $worksheet = $spreadsheet->getSheetByName('Atlete');
-                $atlete = $this->extractNamesFromWorksheet($worksheet);
+            $sheetAtlete = $spreadsheet->getSheetByName('Atlete');
+            if ($sheetAtlete !== null) {
+                $atlete = $this->extractNamesFromWorksheet($sheetAtlete);
             }
 
-            if ($spreadsheet->sheetNameExists('Atleti')) {
-                $worksheet = $spreadsheet->getSheetByName('Atleti');
-                $atleti = $this->extractNamesFromWorksheet($worksheet);
+            $sheetAtleti = $spreadsheet->getSheetByName('Atleti');
+            if ($sheetAtleti !== null) {
+                $atleti = $this->extractNamesFromWorksheet($sheetAtleti);
             }
 
             if (empty($atlete) && empty($atleti)) {
@@ -81,24 +88,30 @@ class QuadrantiController extends Controller
     }
 
     /**
-     * Estrae i nomi dal foglio di lavoro.
+     * Estrae i nomi dal foglio di lavoro (colonna B, fallback colonna A).
+     *
+     * @return list<string>
      */
-    private function extractNamesFromWorksheet($worksheet)
+    private function extractNamesFromWorksheet(Worksheet $worksheet): array
     {
         $names = [];
         $highestRow = $worksheet->getHighestRow();
 
         for ($row = 2; $row <= $highestRow; $row++) {
-            $name = $worksheet->getCell('B'.$row)->getValue();
-            if (empty($name)) {
-                $name = $worksheet->getCell('A'.$row)->getValue();
+            $raw = $worksheet->getCell('B'.$row)->getValue();
+            if ($raw === null || $raw === '') {
+                $raw = $worksheet->getCell('A'.$row)->getValue();
             }
-            if (! empty($name)) {
-                $name = trim($name);
-                $name = preg_replace('/^\d+\.?\s*/', '', $name);
-                if (! empty($name)) {
-                    $names[] = $name;
-                }
+
+            // getValue() torna scalar|RichText|null: solo gli scalari sono nomi.
+            if (! is_scalar($raw)) {
+                continue;
+            }
+
+            $name = preg_replace('/^\d+\.?\s*/', '', trim((string) $raw));
+
+            if ($name !== null && $name !== '') {
+                $names[] = $name;
             }
         }
 
@@ -107,13 +120,11 @@ class QuadrantiController extends Controller
 
     /**
      * Get sunrise and sunset times based on geographic area
-     *
-     * @return \Illuminate\Http\JsonResponse
      */
-    public function getCoordinates(Request $request)
+    public function getCoordinates(Request $request): JsonResponse
     {
-        $geoArea = $request->input('geo_area', 'CENTRO');
-        $date = $request->input('start', date('d/m/Y'));
+        $geoArea = $request->string('geo_area', 'CENTRO')->toString();
+        $date = $request->string('start', date('d/m/Y'))->toString();
 
         $coordinates = [
             'NORD OVEST' => ['lat' => 45.4642, 'lon' => 9.1900],
@@ -149,7 +160,9 @@ class QuadrantiController extends Controller
             $lat = $coord['lat'];
             $lon = $coord['lon'];
 
-            $n = $dateTime->diff(new \DateTime('2000-01-01'))->days;
+            // DateInterval::\$days e' int|false: senza cast il calcolo
+            // diventa aritmetica su false.
+            $n = (int) $dateTime->diff(new \DateTime('2000-01-01'))->days;
             $L = fmod(280.460 + 0.9856474 * $n, 360);
             $g = fmod(357.528 + 0.9856003 * $n, 360);
             $lambda = $L + 1.915 * sin(deg2rad($g)) + 0.020 * sin(deg2rad(2 * $g));

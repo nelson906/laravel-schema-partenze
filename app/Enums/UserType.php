@@ -17,7 +17,7 @@ enum UserType: string
 
     public function isAdmin(): bool
     {
-        return in_array($this, [self::SuperAdmin, self::Admin]);
+        return in_array($this, [self::SuperAdmin, self::Admin], true);
     }
 
     public function label(): string
@@ -30,12 +30,18 @@ enum UserType: string
     }
 
     /**
-     * Opzioni per dropdown del form (label => value).
+     * Opzioni per dropdown del form (value => label).
+     *
+     * @return array<string, string>
      */
     public static function options(): array
     {
-        return collect(self::cases())
-            ->mapWithKeys(fn ($t) => [$t->value => $t->label()])
-            ->toArray();
+        $options = [];
+
+        foreach (self::cases() as $case) {
+            $options[$case->value] = $case->label();
+        }
+
+        return $options;
     }
 }

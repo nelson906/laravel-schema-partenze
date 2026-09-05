@@ -1,4 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach, vi, beforeAll } from 'vitest';
+import {
+  range,
+  formatMinutes,
+  addTime,
+  halfTime,
+  chunkArray,
+  debounce,
+  formatDate,
+  storage,
+  escapeHtml,
+} from './utils.js';
 
 // Mock localStorage in-memory (jsdom non garantisce clear() in tutti gli ambienti)
 const localStorageMock = (() => {
@@ -14,17 +25,6 @@ const localStorageMock = (() => {
 beforeAll(() => {
   vi.stubGlobal('localStorage', localStorageMock);
 });
-import {
-  range,
-  formatMinutes,
-  addTime,
-  halfTime,
-  chunkArray,
-  debounce,
-  formatDate,
-  storage,
-  escapeHtml,
-} from './utils.js';
 
 // ─── range ───────────────────────────────────────────────────────────────────
 describe('range', () => {

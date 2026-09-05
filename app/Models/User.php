@@ -17,8 +17,12 @@ use Illuminate\Notifications\Notifiable;
  */
 class User extends Authenticatable
 {
-    use HasFactory, Notifiable;
+    /** @use HasFactory<\Database\Factories\UserFactory> */
+    use HasFactory;
 
+    use Notifiable;
+
+    /** @var list<string> */
     protected $fillable = [
         'name',
         'email',
@@ -27,6 +31,7 @@ class User extends Authenticatable
         'is_active',
     ];
 
+    /** @var list<string> */
     protected $hidden = [
         'password',
         'remember_token',
@@ -37,10 +42,14 @@ class User extends Authenticatable
      * Senza questo, un'istanza appena creata (es. factory nei test) avrebbe
      * is_active=null in memoria e EnsureUserIsActive la butterebbe fuori.
      */
+    /** @var array<string, mixed> */
     protected $attributes = [
         'is_active' => true,
     ];
 
+    /**
+     * @return array<string, string>
+     */
     protected function casts(): array
     {
         return [

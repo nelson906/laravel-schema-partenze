@@ -5,10 +5,12 @@ namespace App\Http\Controllers\Admin;
 use App\Enums\UserType;
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
+use Illuminate\View\View;
 
 /**
  * CRUD utenti — visibile solo agli admin (middleware 'admin' a livello route).
@@ -21,23 +23,23 @@ use Illuminate\Validation\Rules\Password;
  */
 class UserController extends Controller
 {
-    public function index()
+    public function index(): View
     {
         $users = User::orderBy('user_type')->orderBy('name')->paginate(20);
 
         return view('admin.users.index', compact('users'));
     }
 
-    public function create()
+    public function create(): View
     {
         return view('admin.users.create', [
             'userTypes' => $this->allowedUserTypes(),
         ]);
     }
 
-    public function store(Request $request)
+    public function store(Request $request): RedirectResponse
     {
-        $data = $request->validate([
+        $request->validate([
             'name'      => 'required|string|max:255',
             'email'     => 'required|email|max:255|unique:users,email',
             'password'  => ['required', 'confirmed', Password::min(8)],
@@ -45,15 +47,20 @@ class UserController extends Controller
             'is_active' => 'sometimes|boolean',
         ]);
 
-        $data['password']  = Hash::make($data['password']);
-        $data['is_active'] = (bool) ($data['is_active'] ?? true);
-
-        User::create($data);
+        // validate() e' una macro su Request e torna mixed: i valori si
+        // rileggono dai getter tipizzati, gia' validati qui sopra.
+        User::create([
+            'name'      => $request->string('name')->toString(),
+            'email'     => $request->string('email')->toString(),
+            'password'  => Hash::make($request->string('password')->toString()),
+            'user_type' => $request->string('user_type')->toString(),
+            'is_active' => $request->boolean('is_active', true),
+        ]);
 
         return redirect()->route('admin.users.index')->with('success', 'Utente creato.');
     }
 
-    public function edit(User $user)
+    public function edit(User $user): View
     {
         $this->guardCanEdit($user);
 
@@ -63,11 +70,11 @@ class UserController extends Controller
         ]);
     }
 
-    public function update(Request $request, User $user)
+    public function update(Request $request, User $user): RedirectResponse
     {
         $this->guardCanEdit($user);
 
-        $data = $request->validate([
+        $request->validate([
             'name'      => 'required|string|max:255',
             'email'     => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
             'password'  => ['nullable', 'confirmed', Password::min(8)],
@@ -75,19 +82,21 @@ class UserController extends Controller
             'is_active' => 'sometimes|boolean',
         ]);
 
+        $userType = $request->string('user_type')->toString();
+
         // L'utente loggato NON può cambiare il proprio user_type (anti-promozione)
-        if ($user->id === auth()->id() && $data['user_type'] !== $user->user_type?->value) {
+        if ($user->id === auth()->id() && $userType !== $user->user_type?->value) {
             return back()->withErrors(['user_type' => 'Non puoi cambiare il tuo stesso ruolo.']);
         }
 
         $update = [
-            'name'      => $data['name'],
-            'email'     => $data['email'],
-            'user_type' => $data['user_type'],
-            'is_active' => (bool) ($data['is_active'] ?? false),
+            'name'      => $request->string('name')->toString(),
+            'email'     => $request->string('email')->toString(),
+            'user_type' => $userType,
+            'is_active' => $request->boolean('is_active'),
         ];
-        if (! empty($data['password'])) {
-            $update['password'] = Hash::make($data['password']);
+        if ($request->filled('password')) {
+            $update['password'] = Hash::make($request->string('password')->toString());
         }
 
         $user->update($update);
@@ -95,7 +104,7 @@ class UserController extends Controller
         return redirect()->route('admin.users.index')->with('success', 'Utente aggiornato.');
     }
 
-    public function destroy(User $user)
+    public function destroy(User $user): RedirectResponse
     {
         $this->guardCanEdit($user);
 
@@ -108,7 +117,7 @@ class UserController extends Controller
         return redirect()->route('admin.users.index')->with('success', 'Utente eliminato.');
     }
 
-    public function toggleActive(User $user)
+    public function toggleActive(User $user): RedirectResponse
     {
         $this->guardCanEdit($user);
 
@@ -128,9 +137,14 @@ class UserController extends Controller
      * - super_admin: tutti
      * - admin:       può creare admin/user, NON super_admin
      */
+    /**
+     * @return array<string, string>
+     */
     protected function allowedUserTypes(): array
     {
-        if (auth()->user()?->isSuperAdmin()) {
+        $current = auth()->user();
+
+        if ($current instanceof User && $current->isSuperAdmin()) {
             return UserType::options();
         }
 
@@ -145,7 +159,9 @@ class UserController extends Controller
      */
     protected function guardCanEdit(User $user): void
     {
-        if ($user->isSuperAdmin() && ! auth()->user()->isSuperAdmin()) {
+        $current = auth()->user();
+
+        if ($user->isSuperAdmin() && ! ($current instanceof User && $current->isSuperAdmin())) {
             abort(403, 'Solo un super_admin può modificare un altro super_admin.');
         }
     }
