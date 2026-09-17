@@ -300,8 +300,14 @@
                 <strong style="color:#1e293b;">
                     <i class="fas fa-table-list mr-1"></i> Vista FIG — Orario di partenza Giro 1 e Giro 2
                 </strong>
+                <div>
+                <button type="button" id="fig-modal-print"
+                    class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white py-1 px-3 rounded mr-2">
+                    <i class="fas fa-print mr-1"></i> Stampa
+                </button>
                 <button type="button" id="fig-modal-close"
                     style="border:none; background:none; font-size:24px; line-height:1; cursor:pointer; color:#64748b;">&times;</button>
+                </div>
             </div>
             <div id="fig-modal-body" style="padding:18px; overflow:auto;"></div>
         </div>

@@ -249,6 +249,14 @@ export const COMPETITION_FORMATS = {
   }
 };
 
+/**
+ * Stacco minimo fra due partenze: due flight non possono partire alla stessa
+ * ora, quindi un margine di 0 e' gia' una collisione. Usato sia come stacco
+ * breve fra blocchi della stessa sessione, sia come margine minimo richiesto
+ * all'incrocio.
+ */
+export const STACCO_BREVE = '00:10';
+
 export const COMPACT_TYPES = {
   EARLY_LATE: 'Early/Late',
   CONTINUOUS: 'Early(<14)'

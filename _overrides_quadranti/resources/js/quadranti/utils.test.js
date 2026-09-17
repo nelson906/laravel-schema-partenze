@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi, beforeAll } from 'vite
 import {
   range,
   formatMinutes,
+  toMinutes,
   addTime,
   halfTime,
   chunkArray,
@@ -174,5 +175,16 @@ describe('escapeHtml', () => {
   it('null/undefined diventano stringa vuota', () => {
     expect(escapeHtml(null)).toBe('');
     expect(escapeHtml(undefined)).toBe('');
+  });
+});
+
+describe('toMinutes', () => {
+  it('converte hh:mm in minuti totali', () => {
+    expect(toMinutes('00:00')).toBe(0);
+    expect(toMinutes('02:15')).toBe(135);
+    expect(toMinutes('12:05')).toBe(725);
+  });
+  it('accetta anche durate non zero-padded', () => {
+    expect(toMinutes('1:55')).toBe(115);
   });
 });

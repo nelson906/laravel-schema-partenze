@@ -741,10 +741,10 @@ describe('REGRESSIONE — generateDoubleTee (prima/seconda)', () => {
       compatto: 'Early/Late', startTime: '08:00', gap: '00:10', round: '04:30',
     });
     l.generateDoubleTee('prima');
-    // Striscia FIG a blocchi (motore unico): label "Blocco N · Tee 1|10".
+    // Striscia FIG a blocchi (motore unico): label "Alto|Basso Sx|Dx" (Sx = Tee 1).
     const men = l.figQuadranti.filter((x) => x.categoria === 'Uomini');
-    const tee1 = men.filter((x) => /Tee 1$/.test(x.label));
-    const tee10 = men.filter((x) => /Tee 10$/.test(x.label));
+    const tee1 = men.filter((x) => / Sx/.test(x.label));
+    const tee10 = men.filter((x) => / Dx/.test(x.label));
     // Il primo blocco Tee 1 apre la numerazione a flight 1.
     expect(Math.min(...tee1.map((x) => x.flightStart))).toBe(1);
     // Tutti i Tee 10 sono numerati DOPO tutti i Tee 1 (regola unificata).
@@ -1276,7 +1276,7 @@ describe('Striscia FIG — quadrantRange / figQuadranti / generateFigStrip', () 
       ]);
       expect(logic.figQuadranti).toHaveLength(1);
       expect(logic.figQuadranti[0]).toMatchObject({
-        categoria: 'Uomini', label: 'Q1', first: 1, last: 6, invertire: false,
+        categoria: 'Uomini', label: 'Alto Sx', first: 1, last: 6, invertire: false,
       });
     });
 
@@ -1326,7 +1326,7 @@ describe('Striscia FIG — quadrantRange / figQuadranti / generateFigStrip', () 
         l.generateDoubleTee(g);
         const men = l.figQuadranti.filter((q) => q.categoria === 'Uomini');
         expect(men.length).toBeGreaterThan(0);
-        expect(men.every((q) => /Blocco \d+ · Tee (1|10)/.test(q.label))).toBe(true);
+        expect(men.every((q) => /^(Alto|Basso) (Sx|Dx)( \d+)?$/.test(q.label))).toBe(true);
         const ranks = men.flatMap((q) => [q.first, q.last]);
         expect(Math.min(...ranks)).toBe(1);
         expect(Math.max(...ranks)).toBe(144);
@@ -1351,10 +1351,10 @@ describe('Striscia FIG — quadrantRange / figQuadranti / generateFigStrip', () 
       });
       l.generateDoubleTee('finale');
       const labels = l.figQuadranti.map(q => `${q.categoria} ${q.label}`);
-      expect(labels).toContain('Uomini Q1 · Tee 1');
-      expect(labels).toContain('Uomini Q2 · Tee 10');
-      expect(labels).toContain('Donne Q1 · Tee 1');
-      expect(labels).toContain('Donne Q2 · Tee 10');
+      expect(labels).toContain('Uomini Alto Sx');
+      expect(labels).toContain('Uomini Alto Dx');
+      expect(labels).toContain('Donne Alto Sx');
+      expect(labels).toContain('Donne Alto Dx');
     });
   });
 
@@ -1412,8 +1412,121 @@ describe('Striscia FIG — quadrantRange / figQuadranti / generateFigStrip', () 
         { categoria: 'Uomini', label: 'Q2', first: 45, last: 1, invertire: true },
       ];
       const html = logic.generateFigStrip();
-      expect(html).toContain('Uomini Q1: 1 → 27');
-      expect(html).toContain('Uomini Q2: 45 → 1');
+      expect(html).toContain('Uomini\n  Q1: 1 → 27');
+      expect(html).toContain('Q2: 45 → 1');
+    });
+
+    it('più sezioni: titolo per giro e badge sul giro in tabella', () => {
+      const q = [{ categoria: 'Uomini', label: 'Alto Sx', first: 1, last: 27, invertire: false }];
+      const html = logic.generateFigStrip([
+        { titolo: '1° giro', corrente: false, quadranti: q },
+        { titolo: '2° giro', corrente: true, quadranti: q },
+      ]);
+      expect(html).toContain('1° giro');
+      expect(html).toContain('2° giro');
+      expect((html.match(/>in tabella<\/span>/g) || []).length).toBe(1);
+      expect(html).toContain('== 1° giro ==');
+      expect(html).toContain('== 2° giro ==');
+    });
+  });
+
+  describe('2° giro: numeri flight del 1° giro (match FIG)', () => {
+    const cfg55 = {
+      players: 55, proette: 16, playersPerFlight: 3, nominativo: 'Off',
+      garaNT: 'Gara 54 buche', doppiePartenze: 'Doppie Partenze',
+      compatto: 'Early/Late', startTime: '08:00', gap: '00:10', round: '04:50',
+    };
+
+    it('55U: striscia 2° giro = 15 / 6 / 10 / 1 come orario FIG', () => {
+      const l = makeLogic(cfg55);
+      l.generateDoubleTee('seconda');
+      const men = Object.fromEntries(l.figQuadranti
+        .filter((q) => q.categoria === 'Uomini').map((q) => [q.label, q.flightStart]));
+      expect(men).toEqual({ 'Alto Sx': 15, 'Alto Dx': 6, 'Basso Sx': 10, 'Basso Dx': 1 });
+    });
+
+    it('ogni flight del 2° giro ha lo stesso numero del 1° giro', () => {
+      const l = makeLogic(cfg55);
+      l.generateDoubleTee('prima');
+      const g1 = new Map(l.figFlights.map((f) => [l.figFlightKey(f), f.group.flightNumber]));
+      l.generateDoubleTee('seconda');
+      expect(l.figFlights.length).toBe(g1.size);
+      l.figFlights.forEach((f) => expect(f.group.flightNumber).toBe(g1.get(l.figFlightKey(f))));
+    });
+
+    it('il 1° giro non cambia e lo stato resta quello del 2° giro', () => {
+      const l = makeLogic(cfg55);
+      l.generateDoubleTee('prima');
+      const prima = JSON.stringify(l.figQuadranti.map((q) => q.flightStart));
+      l.generateDoubleTee('seconda');
+      expect(l.figQuadranti.every((q) => q.blocco.chiave.startsWith('seconda|'))).toBe(true);
+      l.generateDoubleTee('prima');
+      expect(JSON.stringify(l.figQuadranti.map((q) => q.flightStart))).toBe(prima);
+    });
+  });
+
+  describe('etichette posizione e orari manuali per blocco', () => {
+    const cfg = {
+      players: 144, proette: 48, playersPerFlight: 3, nominativo: 'Off',
+      garaNT: 'Gara 54 buche', doppiePartenze: 'Doppie Partenze',
+      compatto: 'Early/Late', startTime: '08:00', gap: '00:10', round: '04:30',
+    };
+
+    it('Q1..Q4 diventano Alto/Basso Sx/Dx', () => {
+      logic.figQuadranti = [];
+      logic.pushFigQuadrante('Uomini', 'Q4', [{ players: [1, 2, 3] }]);
+      expect(logic.figQuadranti[0].label).toBe('Basso Dx');
+    });
+
+    it('etichetta ripetuta nella stessa categoria riceve un progressivo', () => {
+      logic.figQuadranti = [];
+      logic.pushFigQuadrante('Uomini', 'Alto Sx', [{ players: [1, 2, 3] }]);
+      logic.pushFigQuadrante('Uomini', 'Alto Sx', [{ players: [4, 5, 6] }]);
+      expect(logic.figQuadranti.map((q) => q.label)).toEqual(['Alto Sx', 'Alto Sx 2']);
+    });
+
+    it('ogni blocco ha orario e chiave; Early = Alto, Late = Basso', () => {
+      const l = makeLogic(cfg);
+      l.generateDoubleTee('prima');
+      const q = l.figQuadranti;
+      expect(q.every((x) => x.blocco && /^prima\|\d+\|[MF]\|(early|late)$/.test(x.blocco.chiave))).toBe(true);
+      expect(q.every((x) => (x.blocco.sessione === 'late') === x.label.startsWith('Basso'))).toBe(true);
+      expect(q[0].blocco.ora).toBe('08:00');
+    });
+
+    it('orario manuale sposta il blocco e in cascata i successivi', () => {
+      const l = makeLogic(cfg);
+      l.generateDoubleTee('prima');
+      const prima = l.figQuadranti.map((x) => x.blocco.ora);
+      const late = l.figQuadranti.find((x) => x.blocco.sessione === 'late');
+      l.orariBlocchi = { [late.blocco.chiave]: '14:00' };
+      const html = l.generateDoubleTee('prima');
+      const dopo = l.figQuadranti;
+      const iLate = dopo.findIndex((x) => x.blocco.chiave === late.blocco.chiave);
+      expect(dopo[iLate].blocco.ora).toBe('14:00');
+      expect(dopo[iLate].blocco.manuale).toBe(true);
+      // I blocchi precedenti restano invariati, i successivi partono dopo le 14:00.
+      dopo.slice(0, iLate).forEach((x, i) => expect(x.blocco.ora).toBe(prima[i]));
+      dopo.slice(iLate).forEach((x) => expect(x.blocco.ora >= '14:00').toBe(true));
+      expect(html).toContain('14:00');
+      // Chiavi di un giro non toccano l'altro giro.
+      l.generateDoubleTee('seconda');
+      expect(l.figQuadranti.some((x) => x.blocco.manuale)).toBe(false);
+    });
+
+    it('striscia: input orario per blocco e pulsante ripristino solo con orari manuali', () => {
+      const l = makeLogic(cfg);
+      l.generateDoubleTee('prima');
+      let html = l.generateFigStrip();
+      expect(html).toContain('class="fig-orario"');
+      expect(html).toContain('Ripartenza');
+      expect(html).not.toContain('fig-orari-reset');
+      const k = l.figQuadranti[0].blocco.chiave;
+      l.orariBlocchi = { [k]: '07:30' };
+      l.generateDoubleTee('prima');
+      html = l.generateFigStrip();
+      expect(html).toContain('fig-orari-reset');
+      expect(html).toContain('Partenza 07:30 (manuale)');
     });
   });
 });
@@ -1446,16 +1559,55 @@ describe('Vista FIG — generateFigComparison', () => {
     expect(html).toContain('Giro 1');
     expect(html).toContain('Giro 2');
     expect(html).toContain('Match');
-    expect(html).toContain('Giocatori');
+    expect(html).toContain('Nr.');
+    expect(html).toContain('Nome');
   });
+
+  const sezione = (html, cat) => (html.split(`data-cat="${cat}"`)[1] || '').split('</section>')[0];
+  const matchDi = (sez) => (sez.match(/class="fig-match"[^>]*>(\d+)</g) || [])
+    .map((m) => parseInt(m.match(/>(\d+)</)[1], 10));
 
   it('ogni flight uomini compare una sola volta nella tabella', () => {
     const html = logic.generateFigComparison();
-    // Estrai la sezione Uomini (fino a "Donne")
-    const sezUomini = html.split('Donne')[0];
-    const trCount = (sezUomini.match(/<tr>/g) || []).length;
-    // 144 uomini / 3 = 48 flight → 48 righe nel tbody
-    expect(trCount).toBe(48);
+    const sezUomini = sezione(html, 'M');
+    // 144 uomini / 3 = 48 flight → 48 righe-flight
+    expect((sezUomini.match(/class="fig-flight"/g) || []).length).toBe(48);
+    // una riga per giocatore: 144 righe nei tbody
+    const tbody = sezUomini.split('<tbody>').slice(1).map((t) => t.split('</tbody>')[0]).join('');
+    expect((tbody.match(/<tr[ >]/g) || []).length).toBe(144);
+  });
+
+  it('layout orario FIG: Tee 1 e Tee 10 in tabelle separate, Giro 2 con lo stesso match', () => {
+    const html = logic.generateFigComparison();
+    const sezUomini = sezione(html, 'M');
+    expect(sezUomini).toContain('data-tee="1"');
+    expect(sezUomini).toContain('data-tee="10"');
+    const tee1 = sezUomini.split('data-tee="10"')[0];
+    const m1 = matchDi(tee1);
+    // Tee 1 = match 1..24 in ordine, Tee 10 continua da 25
+    expect(m1).toEqual(Array.from({ length: 24 }, (_, i) => i + 1));
+    expect(matchDi(sezUomini.split('data-tee="10"')[1])[0]).toBe(25);
+    // Prima riga: match Giro 2 = match Giro 1
+    const primaRiga = tee1.split('class="fig-flight"')[1].split('</tr>')[0];
+    const celle = primaRiga.match(/>([^<>]*)<\/td>/g).map((c) => c.slice(1, -5));
+    expect(celle[0]).toBe('1');
+    expect(celle[3]).toBe('1');
+  });
+
+  it('intestazione con gara, circolo e data; genere dal titolo', () => {
+    const html = logic.generateFigComparison({
+      titolo: "COPPA D'ORO - MASCHILE", club: 'COUNTRY CLUB', data: 'giovedì 17 settembre 2026',
+    });
+    expect(html).toContain("COPPA D'ORO - MASCHILE");
+    expect(html).toContain("COPPA D'ORO - FEMMINILE");
+    expect(html).toContain('COUNTRY CLUB');
+    expect(html).toContain('Orario di partenza giro 1 e giro 2 - giovedì 17 settembre 2026');
+  });
+
+  it('figGroupPlayers: Nr. dal rango, nome senza virgola, ordinati', () => {
+    const r = logic.figGroupPlayers({ players: ['ROSSI, MARIO', 'BIANCHI, LUCA'], playerIndices: [5, 3] });
+    expect(r).toEqual([{ nr: 4, nome: 'BIANCHI LUCA' }, { nr: 6, nome: 'ROSSI MARIO' }]);
+    expect(logic.figGroupPlayers({ players: [9, 8, 7] }).map((g) => g.nr)).toEqual([7, 8, 9]);
   });
 
   it('non altera figQuadranti (lo ripristina dopo generateDoubleTee interni)', () => {
@@ -1481,11 +1633,7 @@ describe('Vista FIG — generateFigComparison', () => {
 
   it('i match del Giro 1 sono progressivi e iniziano da 1', () => {
     const html = logic.generateFigComparison();
-    const sezUomini = html.split('Donne')[0];
-    // Primo match della prima riga dati = 1
-    const tbody = sezUomini.split('<tbody>')[1] || '';
-    const firstRow = tbody.split('</tr>')[0];
-    expect(firstRow).toContain('>1<');
+    expect(matchDi(sezione(html, 'M'))[0]).toBe(1);
   });
 
   it('ogni riga ha sia Giro 1 sia Giro 2 valorizzati (flight presente in entrambe le giornate)', () => {
@@ -1510,18 +1658,12 @@ describe('Vista FIG — generateFigComparison', () => {
     // FIG tratta gara M e gara F come due gare distinte: numerazione
     // dei match indipendente, ciascuna da 1 (no sequenza condivisa con buchi).
     const html = logic.generateFigComparison();
-    const sezDonne = html.split('Donne')[1] || '';
-    const tbodyDonne = sezDonne.split('<tbody>')[1] || '';
-    const firstRowDonne = tbodyDonne.split('</tr>')[0];
-    // La prima riga donne deve avere match Giro 1 = 1
-    expect(firstRowDonne).toContain('>1<');
-    // 48 donne / 3 = 16 flight → match donne vanno 1..16, nessun match > 16
-    const sezUomini = html.split('Donne')[0];
-    const tbodyUomini = sezUomini.split('<tbody>')[1] || '';
-    const matchUomini = (tbodyUomini.match(/font-weight:600;">(\d+)</g) || [])
-      .map(m => parseInt(m.match(/>(\d+)</)[1], 10));
+    const matchDonne = matchDi(sezione(html, 'F'));
+    expect(matchDonne[0]).toBe(1);
+    // 48 donne / 3 = 16 flight → match donne 1..16
+    expect(Math.max(...matchDonne)).toBe(16);
     // 144 uomini / 3 = 48 flight → max match uomini = 48
-    expect(Math.max(...matchUomini)).toBe(48);
+    expect(Math.max(...matchDi(sezione(html, 'M')))).toBe(48);
   });
 
   it('mostra i nomi quando in modalità nominativo', () => {
@@ -1547,8 +1689,7 @@ describe('Vista FIG — generateFigComparison', () => {
     const html = l36.generateFigComparison();
     expect(html).toContain('Uomini');
     // 54 uomini / 3 = 18 flight
-    const trCount = (html.match(/<tr>/g) || []).length;
-    expect(trCount).toBe(18);
+    expect((html.match(/class="fig-flight"/g) || []).length).toBe(18);
   });
 });
 
@@ -2142,9 +2283,9 @@ describe('Quadranti a U rovesciata (forma UR) — giovanili / patrocinate', () =
       startTime: '08:00', gap: '00:10', round: '04:30',
     });
     const html = l.generateDoubleTee('prima');
-    // Ora passa dal renderer unico: striscia FIG con label "Blocco N · Tee X".
+    // Ora passa dal renderer unico: striscia FIG con label "Alto|Basso Sx|Dx".
     expect(l.figQuadranti.length).toBeGreaterThan(0);
-    expect(l.figQuadranti.every((q) => /Blocco \d+ · Tee (1|10)/.test(q.label))).toBe(true);
+    expect(l.figQuadranti.every((q) => /^(Alto|Basso) (Sx|Dx)( \d+)?$/.test(q.label))).toBe(true);
     expect(html).toContain('<table>');
   });
 

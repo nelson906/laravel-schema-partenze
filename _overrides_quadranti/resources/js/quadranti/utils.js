@@ -46,6 +46,16 @@ export const formatMinutes = (totalMinutes) => {
 };
 
 /**
+ * Converts a HH:MM time (or duration) to total minutes
+ * @param {string} time - Time in HH:MM format
+ * @returns {number} Total minutes
+ */
+export const toMinutes = (time) => {
+  const [hours, minutes] = String(time).split(':').map(Number);
+  return (hours || 0) * 60 + (minutes || 0);
+};
+
+/**
  * Adds two times in HH:MM format
  * @param {string} timeA - First time in HH:MM format
  * @param {string} timeB - Second time in HH:MM format

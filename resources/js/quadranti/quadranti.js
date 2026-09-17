@@ -356,13 +356,42 @@ $('#first_table').on('click', '.qd-remove', (e) => this.handleRemovePlayer(e));
 // Vista FIG: apre il modal con la tabella Giro 1 + Giro 2 affiancati,
 // nel layout dell'orario ufficiale FIG, da confrontare col PDF pubblicato.
 $('#fig-view-btn').on('click', () => {
-  $('#fig-modal-body').html(this.logic.generateFigComparison());
+  $('#fig-modal-body').html(this.logic.generateFigComparison(this.figMeta()));
   $('#fig-modal').css('display', 'block');
+});
+// Stampa la Vista FIG in una finestra dedicata (A4 verticale, Tee 10 a pagina nuova).
+$('#fig-modal-print').on('click', () => {
+  const w = window.open('', '_blank');
+  if (!w) return;
+  w.document.write(`<!doctype html><html lang="it"><head><meta charset="utf-8">
+    <title>Orario di partenza giro 1 e giro 2</title>
+    <style>@page { size: A4 portrait; margin: 12mm; } body { font-family: Arial, sans-serif; }
+    tr { page-break-inside: avoid; } section.fig-doc + section.fig-doc { page-break-before: always; }</style>
+    </head><body>${$('#fig-modal-body').html()}</body></html>`);
+  w.document.close();
+  w.focus();
+  w.print();
 });
 $('#fig-modal-close').on('click', () => $('#fig-modal').hide());
 // Chiusura cliccando sullo sfondo scuro (non sul contenuto del modal)
 $('#fig-modal').on('click', (e) => {
   if (e.target === e.currentTarget) $('#fig-modal').hide();
+});
+
+// Orari di partenza per blocco modificabili dalla striscia FIG: il valore
+// sostituisce quello calcolato (vuoto = torna automatico) e si rigenera tutto.
+$('#fig-strip').on('change', '.fig-orario', (e) => {
+  const $input = $(e.currentTarget);
+  const chiave = String($input.data('chiave') || '');
+  const valore = String($input.val() || '');
+  if (!chiave) return;
+  if (/^\d{2}:\d{2}$/.test(valore)) this.logic.orariBlocchi[chiave] = valore;
+  else delete this.logic.orariBlocchi[chiave];
+  this.generateTable();
+});
+$('#fig-strip').on('click', '#fig-orari-reset', () => {
+  this.logic.orariBlocchi = {};
+  this.generateTable();
 });
 
 // Copia la striscia FIG negli appunti. Delegato perché #fig-strip-copy
@@ -408,6 +437,13 @@ $('#fig-strip').on('click', '#fig-strip-copy', (e) => {
    * Handles form input changes
    */
   handleFormChange() {
+    // Firma della struttura della gara: se cambia, gli orari manuali dei
+    // blocchi non corrispondono più agli stessi blocchi e vanno azzerati.
+    const firma = () => JSON.stringify([
+      this.config.garaNT, this.config.players, this.config.proette,
+      this.config.playersPerFlight, this.config.doppiePartenze, this.config.compatto,
+    ]);
+    const firmaPrima = firma();
     // Update configuration from form values - handle empty fields
     const playersVal = $('#players').val();
     const proetteVal = $('#proette').val();
@@ -439,6 +475,8 @@ $('#fig-strip').on('click', '#fig-strip-copy', (e) => {
   this.toggleFinalCutFields();
   this.updateCrossTime();
   this.updateTableTitle();
+
+  if (firma() !== firmaPrima) this.logic.orariBlocchi = {};
 
   // Update logic configuration
   this.logic.updateConfig(this.config);
@@ -819,19 +857,79 @@ $('#fig-strip').on('click', '#fig-strip-copy', (e) => {
     // Il giro finale supporta entrambe le varianti (doppio tee + tee unico).
     // L'utente sceglie via #doppie_partenze. Il render discriminerà internamente
     // il ramo 'finale' in generateDoubleTee / generateSingleTee.
-    let html;
+    const renderGiro = (giro) => (doppiePartenze === TEE_TYPES.DOUBLE
+      ? this.logic.generateDoubleTee(giro)
+      : `<table class="min-w-full divide-y divide-gray-200">${this.logic.generateSingleTee(giro)}</table>`);
 
-    if (doppiePartenze === TEE_TYPES.DOUBLE) {
-      html = this.logic.generateDoubleTee(giornata);
-    } else {
-      html = `<table class="min-w-full divide-y divide-gray-200">${this.logic.generateSingleTee(giornata)}</table>`;
-    }
+    // Striscia FIG di 1° e 2° giro insieme (54/72 buche e gare a 2 giri): il
+    // primo giorno si pubblicano entrambi, la striscia non dipende dal giro
+    // selezionato. Gli altri giri si generano PRIMA, il giro selezionato per
+    // ultimo, così lo stato della logica resta quello della tabella mostrata.
+    const giri = this.giriStriscia(giornata);
+    const quadranti = {};
+    giri.filter((g) => g.id !== giornata).forEach((g) => {
+      try {
+        renderGiro(g.id);
+        quadranti[g.id] = this.logic.figQuadranti || [];
+      } catch (error) {
+        console.warn(`Striscia FIG: ${g.label} non generabile`, error);
+        quadranti[g.id] = [];
+      }
+    });
+
+    const html = renderGiro(giornata);
+    quadranti[giornata] = this.logic.figQuadranti || [];
 
     $('#first_table').html(html);
 
-    // Striscia FIG: generateDoubleTee/generateSingleTee hanno popolato
-    // this.logic.figQuadranti come side-effect; ora ne rendiamo il box.
-    $('#fig-strip').html(this.logic.generateFigStrip());
+    const sezioni = giri.length
+      ? giri.map((g) => ({ titolo: g.label, corrente: g.id === giornata, quadranti: quadranti[g.id] }))
+      : [{ titolo: null, corrente: true, quadranti: quadranti[giornata] }];
+    $('#fig-strip').html(this.logic.generateFigStrip(sezioni));
+  }
+
+  /**
+   * Intestazione della Vista FIG: gara selezionata da Federgolf (titolo,
+   * circolo) e data di gara del form. Campi assenti = non mostrati.
+   * @returns {{titolo:string, club:string, data:string}}
+   */
+  figMeta() {
+    const idx = parseInt($('#federgolf-gare-select').val(), 10);
+    const gara = Number.isInteger(idx) ? this.federgolfGare[idx] : null;
+    return {
+      titolo: gara ? String(gara.nome || '') : '',
+      club: gara ? String(gara.club || '') : '',
+      data: this.dataEstesa(String($('#start').val() || (gara && gara.data) || '')),
+    };
+  }
+
+  /**
+   * "17/09/2026" -> "giovedì 17 settembre 2026" (formato orario FIG).
+   * Valori non riconosciuti tornano invariati.
+   */
+  dataEstesa(testo) {
+    const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(testo.trim());
+    if (!m) return testo;
+    const d = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+    if (Number.isNaN(d.getTime())) return testo;
+    return d.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  }
+
+  /**
+   * Giri da mostrare insieme nella striscia FIG: 1° e 2° giro del formato,
+   * se entrambi esistono e ammettono la variante tee corrente, e se il giro
+   * selezionato è uno dei due. Altrimenti [] (striscia del solo giro in tabella).
+   * @param {string} giornata
+   * @returns {Array<{id:string,label:string}>}
+   */
+  giriStriscia(giornata) {
+    const fmt = COMPETITION_FORMATS[this.config.garaNT];
+    const coppia = [ROUND_TYPES.FIRST, ROUND_TYPES.SECOND];
+    if (!fmt || !Array.isArray(fmt.rounds) || !coppia.includes(giornata)) return [];
+    const tee = this.config.doppiePartenze === TEE_TYPES.DOUBLE ? 'double' : 'single';
+    const giri = fmt.rounds.filter((r) => coppia.includes(r.id)
+      && (!Array.isArray(r.tee) || r.tee.includes(tee)));
+    return giri.length === 2 ? giri.map((r) => ({ id: r.id, label: r.label })) : [];
   }
 
 /**

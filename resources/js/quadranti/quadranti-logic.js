@@ -9,6 +9,8 @@ import {
     TABLE_COLORS,
     COMPETITION_TYPES,
     COMPETITION_FORMATS,
+    COMPACT_TYPES,
+    STACCO_BREVE,
     parseForma,
     ROUND_TYPES
 } from './config.js';
@@ -17,9 +19,14 @@ import {
     range,
     addTime,
     halfTime,
+    toMinutes,
+    formatMinutes,
     storage,
     escapeHtml
 } from './utils.js';
+
+/** Etichette quadrante Q1..Q4 -> posizione in tabella (striscia FIG). */
+const QUADRANT_POSITIONS = { Q1: 'Alto Sx', Q2: 'Alto Dx', Q3: 'Basso Sx', Q4: 'Basso Dx' };
 
 /**
  * Class representing the quadranti logic for tee time calculations
@@ -28,6 +35,11 @@ export class QuadrantiLogic {
     constructor(config) {
         this.config = config;
         this.tableHTML = '';
+        // Orari di partenza impostati a mano per blocco (chiave = giro|indice|cat|sessione).
+        // Solo in memoria: vuoto = orari calcolati automaticamente.
+        this.orariBlocchi = {};
+        // Giro in rendering (serve a renderBlocchi per le chiavi degli orari).
+        this._giroCorrente = '';
     }
 
     /**
@@ -679,6 +691,127 @@ export class QuadrantiLogic {
   }
 
   /**
+   * 2° giro: ogni flight tiene il numero che aveva nel 1° giro (come il
+   * "Match" dell'orario FIG giro 1 e giro 2). Si applica solo se TUTTI i
+   * flight del 2° giro esistono identici nel 1° (stessi giocatori); se i
+   * gruppi cambiano (giri per classifica) resta la numerazione unificata.
+   * @param {Array<{cat:('M'|'F'), tee1:Array, tee10:Array}>} blocchi
+   */
+  applicaNumeriGiro1(blocchi) {
+    const mappa = this._numeriGiro1;
+    if (!mappa || this._giroCorrente !== ROUND_TYPES.SECOND) return;
+    const gruppi = [];
+    blocchi.forEach((b) => [...b.tee1, ...b.tee10].forEach((g) => gruppi.push({ cat: b.cat, g })));
+    const numeri = gruppi.map(({ cat, g }) => mappa.get(this.chiaveGruppo(cat, g)));
+    if (numeri.some((n) => n == null)) return;
+    gruppi.forEach(({ g }, i) => { g.flightNumber = numeri[i]; });
+  }
+
+  /** Chiave stabile di un gruppo: categoria + giocatori (indici) ordinati. */
+  chiaveGruppo(cat, g) {
+    const ids = (g.playerIndices && g.playerIndices.length)
+      ? g.playerIndices.slice().sort((a, b) => a - b)
+      : g.players.filter((p) => p !== '' && p != null).slice().sort();
+    return `${cat}|${ids.join(',')}`;
+  }
+
+  /**
+   * Stacco Early -> Late (incrocio). Dipende dalla Modalita' (#compatto):
+   * - COMPACT_TYPES.EARLY_LATE: mezzo giro, il tempo perche' l'ultimo volo
+   *   Early concluda le prime nove buche prima di far partire il blocco Late.
+   * - COMPACT_TYPES.CONTINUOUS ('Early(<14)'): nessun incrocio, stacco breve
+   *   di 00:10 -> Early e Late risultano accorpati in un blocco unico.
+   * @returns {string} stacco in formato hh:mm
+   */
+  staccoIncrocio() {
+    return this.config.compatto === COMPACT_TYPES.CONTINUOUS
+      ? STACCO_BREVE
+      : halfTime(this.config.round);
+  }
+
+  /**
+   * Margine all'incrocio per la modalita' CONTINUOUS ('Early(<14)').
+   *
+   * In quella modalita' non c'e' attesa di mezzo giro: tutte le partenze — Early
+   * e Late — formano un'onda unica. Il vincolo reale non e' fra i due blocchi
+   * (la prima Late e' calcolata proprio dallo stacco, quindi quel confronto
+   * sarebbe sempre lo stesso numero), ma fra la CODA delle partenze e la TESTA
+   * del campo che torna all'incrocio: il primo volo partito dal Tee 1 arriva
+   * alla buca 10 dopo mezzo giro. Se si sta ancora facendo partire gente dopo
+   * quell'istante, coda e testa si incontrano all'incrocio.
+   *
+   *   incrocio = prima partenza + mezzo giro
+   *   margine  = incrocio - ultima partenza
+   *
+   * La soglia NON e' zero: margine 0 significa due flight in partenza alla
+   * stessa ora, che e' gia' una collisione. Serve almeno STACCO_BREVE (10').
+   *
+   * - margine >= 10' -> onda unica pulita, il campo e' tutto in gioco con
+   *   almeno uno stacco di distanza dai primi voli che rientrano.
+   * - margine <  10' -> SOVRAPPOSIZIONE (zero e i valori negativi compresi):
+   *   `serve` e' il tempo che manca per rispettare lo stacco minimo.
+   *
+   * `voliEntro` = quante partenze restano almeno uno stacco prima dell'incrocio,
+   * contate sugli orari effettivi (anche gli stacchi fra blocchi consumano
+   * capacita'): e' il vero significato dell'etichetta "Early(<14)".
+   *
+   * @param {string} lastDeparture  ultima partenza della giornata (hh:mm)
+   * @param {string[]} orari        orari di tutte le righe della tabella
+   * @returns {{minuti:number, incrocio:string, serve:string, gap:string, sovrapposizione:boolean, voliPerTee:number, voliEntro:number}}
+   */
+  margineIncrocio(lastDeparture, orari) {
+    const minimo = toMinutes(STACCO_BREVE);
+    const incrocio = addTime(this.config.startTime, halfTime(this.config.round));
+    const minuti = toMinutes(incrocio) - toMinutes(lastDeparture);
+    // Ultima partenza ammessa: l'incrocio meno lo stacco minimo.
+    const limite = toMinutes(incrocio) - minimo;
+    return {
+      minuti,
+      incrocio,
+      serve: formatMinutes(Math.max(0, minimo - minuti)),
+      gap: `${minuti < 0 ? '\u2212' : '+'}${formatMinutes(Math.abs(minuti))}`,
+      sovrapposizione: minuti < minimo,
+      voliPerTee: orari.length,
+      voliEntro: orari.filter((t) => toMinutes(t) <= limite).length
+    };
+  }
+
+  /**
+   * Margine all'incrocio per la modalita' EARLY_LATE.
+   *
+   * Il blocco Late deve partire dopo che l'ultimo volo Early ha concluso le
+   * prime nove buche (incrocio = ultima Early + mezzo giro), con almeno uno
+   * stacco di distanza. Con gli orari calcolati il margine e' sempre uno
+   * stacco; con una Ripartenza impostata a mano puo' cambiare.
+   *
+   * Eccezione: se tutta la giornata parte PRIMA che il primo volo torni
+   * all'incrocio (onda unica, come in Early(<14)) non c'e' conflitto e si
+   * usa il margine dell'onda unica.
+   *
+   *   incrocio = ultima Early + mezzo giro
+   *   margine  = prima Late - incrocio        (soglia: uno stacco)
+   *
+   * @returns {{minuti:number, incrocio:string, serve:string, gap:string, sovrapposizione:boolean, voliPerTee:number, voliEntro:number, ondaUnica:boolean}}
+   */
+  margineRipartenza(lastEarly, firstLate, lastDeparture, orari) {
+    const onda = this.margineIncrocio(lastDeparture, orari);
+    if (!onda.sovrapposizione) return { ...onda, ondaUnica: true };
+    const minimo = toMinutes(this.config.gap) || toMinutes(STACCO_BREVE);
+    const incrocio = addTime(lastEarly, halfTime(this.config.round));
+    const minuti = toMinutes(firstLate) - toMinutes(incrocio);
+    return {
+      minuti,
+      incrocio,
+      serve: formatMinutes(Math.max(0, minimo - minuti)),
+      gap: `${minuti < 0 ? '\u2212' : '+'}${formatMinutes(Math.abs(minuti))}`,
+      sovrapposizione: minuti < minimo,
+      voliPerTee: orari.length,
+      voliEntro: orari.filter((t) => toMinutes(t) <= toMinutes(lastEarly)).length,
+      ondaUnica: false,
+    };
+  }
+
+  /**
    * RENDERER UNICO a blocchi (doppio tee). Riceve i blocchi GIÀ costruiti
    * (`{cat, session, tee1[], tee10[]}`), assegna i flightNumber (regola unica),
    * impagina la tabella, calcola gli orari (stacco incrocio Early→Late = mezzo
@@ -693,11 +826,16 @@ export class QuadrantiLogic {
     const colors = TABLE_COLORS.teeColors;
     const gap = this.config.gap;
     this.assegnaFlightUnificato(costruiti);
+    this.applicaNumeriGiro1(costruiti);
 
     this.figQuadranti = [];
     let bodyHtml = this.generateTableHeader(true);
     let blockTime = this.config.startTime;
+    const giro = this._giroCorrente || '';
+    const manuali = this.orariBlocchi || {};
     let lastEarlyTime = '', firstLateTime = '', lastDeparture = this.config.startTime;
+    let hasLate = false;
+    const orari = [];
 
     costruiti.forEach((b, bi) => {
       const { tee1, tee10 } = b;
@@ -709,17 +847,31 @@ export class QuadrantiLogic {
         const addBlank = blankAtCrossingOnly ? sessionChange : true;
         if (addBlank) bodyHtml += '<tr><td colspan="20" class="py-2">&nbsp;</td></tr>';
       }
+      // Orario impostato a mano: sostituisce quello calcolato; i blocchi
+      // successivi senza orario manuale ripartono in cascata da questo.
+      const chiave = `${giro}|${bi}|${b.cat}|${b.session}`;
+      const manuale = manuali[chiave];
+      const isManuale = typeof manuale === 'string' && /^\d{2}:\d{2}$/.test(manuale);
+      if (isManuale) blockTime = manuale;
       const firstDep = blockTime;
       bodyHtml += this.buildGroupTableRows(tee1, tee10, colore, lbg, rbg, blockTime, gap, b.cat, 1);
       const catLabel = b.cat === 'F' ? 'Donne' : 'Uomini';
-      this.pushFigQuadrante(catLabel, `Blocco ${bi + 1} · Tee 1`, tee1);
-      this.pushFigQuadrante(catLabel, `Blocco ${bi + 1} · Tee 10`, tee10);
+      // Posizione nella tabella: Early = Alto, Late = Basso; Tee 1 = Sx, Tee 10 = Dx.
+      const pos = b.session === 'late' ? 'Basso' : 'Alto';
+      const blocco = { chiave, ora: firstDep, manuale: isManuale, sessione: b.session };
+      this.pushFigQuadrante(catLabel, `${pos} Sx`, tee1, blocco);
+      this.pushFigQuadrante(catLabel, `${pos} Dx`, tee10, blocco);
       const rows = Math.max(tee1.length, tee10.length);
+      // Orari reali di ogni riga: servono per contare quante partenze cadono
+      // prima dell'incrocio senza rifare (male) il calcolo con una formula.
+      let t = blockTime;
+      for (let i = 0; i < rows; i++) { orari.push(t); t = addTime(t, gap); }
       // Ultima partenza del blocco = firstDep + (rows-1) stacchi.
       let blockLastDep = blockTime;
       for (let i = 0; i < rows - 1; i++) blockLastDep = addTime(blockLastDep, gap);
       if (rows > 0) {
         if (b.session === 'early') lastEarlyTime = blockLastDep;
+        if (b.session === 'late') hasLate = true;
         if (b.session === 'late' && !firstLateTime) firstLateTime = firstDep;
         lastDeparture = blockLastDep;
       }
@@ -727,17 +879,41 @@ export class QuadrantiLogic {
       const next = costruiti[bi + 1];
       if (next) {
         const crossing = b.session === 'early' && next.session === 'late';
-        blockTime = addTime(blockTime, crossing ? halfTime(this.config.round) : '00:10');
+        blockTime = addTime(blockTime, crossing ? this.staccoIncrocio() : STACCO_BREVE);
       }
     });
     bodyHtml += '</tbody>';
 
-    // Info box a 3 campi (doppio tee): Ultima Early, Prima Late, Fine Gara.
+    // Info box (doppio tee): Ultima Early, Prima Late, Fine Gara + Margine
+    // all'incrocio quando esiste un blocco Late.
     if (!lastEarlyTime) lastEarlyTime = this.config.startTime;
     if (!firstLateTime) firstLateTime = lastEarlyTime;
     const finishTime = addTime(lastDeparture, this.config.round);
+    // Margine all'incrocio: sempre mostrato quando c'e' un blocco Late.
+    // Early(<14): onda unica. Early/Late: Late dopo il giro dell'ultima Early
+    // (varia con la Ripartenza impostata a mano).
+    const continua = this.config.compatto === COMPACT_TYPES.CONTINUOUS;
+    const m = !hasLate ? null : (continua
+      ? { ...this.margineIncrocio(lastDeparture, orari), ondaUnica: true }
+      : this.margineRipartenza(lastEarlyTime || this.config.startTime,
+          firstLateTime || lastEarlyTime || this.config.startTime, lastDeparture, orari));
+    let testoMargine = '';
+    if (m && m.ondaUnica) {
+      testoMargine = m.sovrapposizione
+        ? `Sovrapposizione all'incrocio (${m.incrocio}) &middot; servono altri ${m.serve} &middot; solo ${m.voliEntro} voli/tee su ${m.voliPerTee} restano a stacco`
+        : `Margine all'incrocio (${m.incrocio}) &middot; ${m.voliPerTee} voli/tee, tutti a stacco pieno`;
+    } else if (m) {
+      testoMargine = m.sovrapposizione
+        ? `Sovrapposizione all'incrocio (${m.incrocio}) &middot; ultima Early a met&agrave; giro, la Late deve partire almeno ${m.serve} dopo`
+        : `Margine all'incrocio (${m.incrocio}) &middot; Late dopo il giro dell'ultima Early`;
+    }
+    const margineHTML = m ? `
+        <div style="text-align: center; padding: 10px; background: ${m.sovrapposizione ? '#fdecea' : 'white'}; border-radius: 4px;">
+          <strong style="display: block; font-size: 18px; color: ${m.sovrapposizione ? '#b3261e' : '#2c5530'};">${m.gap}</strong>
+          <span>${testoMargine}</span>
+        </div>` : '';
     const infoHTML = `
-      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 20px; padding: 15px; background: #e8f5e8; border-radius: 8px;">
+      <div style="display: grid; grid-template-columns: repeat(${m ? 4 : 3}, 1fr); gap: 15px; margin-bottom: 20px; padding: 15px; background: #e8f5e8; border-radius: 8px;">
         <div style="text-align: center; padding: 10px; background: white; border-radius: 4px;">
           <strong style="display: block; font-size: 18px; color: #2c5530;">${lastEarlyTime}</strong>
           <span>Ultima Partenza Early</span>
@@ -749,11 +925,40 @@ export class QuadrantiLogic {
         <div style="text-align: center; padding: 10px; background: white; border-radius: 4px;">
           <strong style="display: block; font-size: 18px; color: #2c5530;">${finishTime}</strong>
           <span>Fine Gara Stimata</span>
-        </div>
+        </div>${margineHTML}
       </div>
     `;
     this.figFlights = this._figFlightsBuffer;
     return infoHTML + `<table>${bodyHtml}</table>`;
+  }
+
+  /**
+   * Numeri flight del 1° giro per chiave gruppo. Genera il 1° giro senza
+   * alterare lo stato visibile (striscia, flight, giro corrente).
+   * @returns {Map<string, number>|null}
+   */
+  numeriFlightGiro1() {
+    const salvato = {
+      figQuadranti: this.figQuadranti,
+      figFlights: this.figFlights,
+      buffer: this._figFlightsBuffer,
+      giro: this._giroCorrente,
+    };
+    let mappa = null;
+    try {
+      this.generateDoubleTee(ROUND_TYPES.FIRST);
+      mappa = new Map();
+      (this.figFlights || []).forEach((f) => {
+        if (f.group.flightNumber != null) mappa.set(this.chiaveGruppo(f.category, f.group), f.group.flightNumber);
+      });
+    } catch {
+      mappa = null;
+    }
+    this.figQuadranti = salvato.figQuadranti;
+    this.figFlights = salvato.figFlights;
+    this._figFlightsBuffer = salvato.buffer;
+    this._giroCorrente = salvato.giro;
+    return mappa;
   }
 
   /**
@@ -762,6 +967,14 @@ export class QuadrantiLogic {
    * @returns {string} HTML table content
    */
   generateDoubleTee(round) {
+    // 2° giro: numeri flight presi dal 1° giro (vedi applicaNumeriGiro1).
+    // Solo se il 2° giro NON è per classifica (reversed): lì i gruppi sono
+    // nuovi anche quando i ranghi coincidono.
+    const fmt2 = COMPETITION_FORMATS[this.config.garaNT];
+    const desc2 = fmt2 && fmt2.rounds ? fmt2.rounds.find((r) => r.id === ROUND_TYPES.SECOND) : null;
+    this._numeriGiro1 = (round === ROUND_TYPES.SECOND && desc2 && !desc2.reversed)
+      ? this.numeriFlightGiro1() : null;
+    this._giroCorrente = round;
     const mod = parseInt(this.config.playersPerFlight, 10) || 3;
     const players = parseInt(this.config.players, 10) || 0;
     const proette = parseInt(this.config.proette, 10) || 0;
@@ -849,10 +1062,10 @@ export class QuadrantiLogic {
 
       // Striscia FIG: primo/ultimo numero per quadrante (giro finale doppio tee)
       this.figQuadranti = [];
-      this.pushFigQuadrante('Uomini', 'Q1 · Tee 1',  maleTee1);
-      this.pushFigQuadrante('Uomini', 'Q2 · Tee 10', maleTee10);
-      this.pushFigQuadrante('Donne',  'Q1 · Tee 1',  femTee1);
-      this.pushFigQuadrante('Donne',  'Q2 · Tee 10', femTee10);
+      this.pushFigQuadrante('Uomini', 'Alto Sx', maleTee1);
+      this.pushFigQuadrante('Uomini', 'Alto Dx', maleTee10);
+      this.pushFigQuadrante('Donne',  'Alto Sx', femTee1);
+      this.pushFigQuadrante('Donne',  'Alto Dx', femTee10);
 
       const gap = this.config.gap;
       const startTime = this.config.startTime;
@@ -1282,10 +1495,19 @@ export class QuadrantiLogic {
     /**
      * Aggiunge una voce a this.figQuadranti se il quadrante non è vuoto.
      * invertire = true quando l'ordine è decrescente (first > last).
+     * Le etichette Q1..Q4 diventano la posizione in tabella (Alto/Basso Sx/Dx);
+     * un'etichetta già usata nella stessa categoria riceve un progressivo.
+     * blocco = {chiave, ora, manuale, sessione} per i blocchi con orario editabile.
      */
-    pushFigQuadrante(categoria, label, groups) {
+    pushFigQuadrante(categoria, label, groups, blocco = null) {
         const r = this.quadrantRange(groups);
         if (!r) return;
+        let etichetta = QUADRANT_POSITIONS[label] || label;
+        const doppi = this.figQuadranti.filter(
+            (q) => q.categoria === categoria && q.baseLabel === etichetta
+        ).length;
+        const baseLabel = etichetta;
+        if (doppi > 0) etichetta = `${etichetta} ${doppi + 1}`;
         // flightStart = numero di flight con cui inizia il quadrante (se i
         // gruppi hanno il flightNumber pre-assegnato da generateDoubleTee).
         const flightStart = (groups[0] && groups[0].flightNumber != null)
@@ -1293,81 +1515,121 @@ export class QuadrantiLogic {
             : null;
         this.figQuadranti.push({
             categoria,
-            label,
+            label: etichetta,
+            baseLabel,
             first: r.first,
             last: r.last,
             invertire: Number(r.first) > Number(r.last),
             flightStart,
+            blocco,
         });
     }
 
     /**
      * Genera l'HTML del box "Striscia per sistema FIG".
-     * Legge this.figQuadranti popolato da generateDoubleTee/generateSingleTee.
-     * Ritorna stringa vuota se non ci sono quadranti.
+     *
+     * @param {Array|null} sezioni  [{titolo, corrente, quadranti}] — una sezione
+     *   per giro (54/72 e 2 giri: 1° e 2° sempre insieme). Senza argomento usa
+     *   this.figQuadranti come sezione unica senza titolo.
+     * @returns {string} HTML ('' se non ci sono quadranti)
      */
-    generateFigStrip() {
-        const quad = this.figQuadranti || [];
-        if (quad.length === 0) return '';
+    generateFigStrip(sezioni = null) {
+        const lista = (Array.isArray(sezioni) && sezioni.length)
+            ? sezioni
+            : [{ titolo: null, corrente: true, quadranti: this.figQuadranti || [] }];
+        if (!lista.some((s) => s.quadranti && s.quadranti.length)) return '';
 
-        // Raggruppa per categoria mantenendo l'ordine di inserimento
-        const categorie = [];
-        quad.forEach((q) => {
-            let bucket = categorie.find(c => c.nome === q.categoria);
-            if (!bucket) {
-                bucket = { nome: q.categoria, voci: [] };
-                categorie.push(bucket);
+        const esc = (v) => escapeHtml(String(v)).replace(/"/g, '&quot;');
+        const nomeOrario = (bl) => (bl.sessione === 'late' ? 'Ripartenza' : 'Partenza');
+        const righe = [];
+        let hasManuali = false;
+        let body = '';
+
+        lista.forEach((sez) => {
+            const quad = sez.quadranti || [];
+            if (quad.length === 0) return;
+            if (sez.titolo) righe.push(`== ${sez.titolo} ==`);
+
+            // Categoria -> gruppi consecutivi con lo stesso blocco (stessa ora)
+            const categorie = [];
+            quad.forEach((q) => {
+                let cat = categorie.find((c) => c.nome === q.categoria);
+                if (!cat) { cat = { nome: q.categoria, gruppi: [] }; categorie.push(cat); }
+                const k = q.blocco ? q.blocco.chiave : null;
+                const last = cat.gruppi[cat.gruppi.length - 1];
+                if (last && last.chiave === k) last.voci.push(q);
+                else cat.gruppi.push({ chiave: k, blocco: q.blocco, voci: [q] });
+            });
+
+            if (sez.titolo) {
+                const tag = sez.corrente
+                    ? ' <span style="background:#3730a3; color:#fff; font-size:10px; padding:1px 6px; border-radius:4px; margin-left:6px;">in tabella</span>'
+                    : '';
+                body += `<div style="font-weight:700; font-size:14px; color:#3730a3; margin:12px 0 6px; border-bottom:1px solid #c7d2fe; padding-bottom:2px;">${esc(sez.titolo)}${tag}</div>`;
             }
-            bucket.voci.push(q);
+
+            categorie.forEach((cat) => {
+                righe.push(cat.nome);
+                body += `<div style="margin-bottom:8px;">
+              <div style="font-weight:600; font-size:13px; color:#1e293b; margin-bottom:4px;">${esc(cat.nome)}</div>`;
+                cat.gruppi.forEach((g) => {
+                    body += '<div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:6px;">';
+                    if (g.blocco) {
+                        const bl = g.blocco;
+                        if (bl.manuale) hasManuali = true;
+                        righe.push(`  ${nomeOrario(bl)} ${bl.ora}${bl.manuale ? ' (manuale)' : ''}`);
+                        body += `<label style="display:inline-flex; align-items:center; gap:4px; font-size:12px; color:#475569; min-width:150px;">
+                  ${nomeOrario(bl)}
+                  <input type="time" class="fig-orario" data-chiave="${esc(bl.chiave)}" value="${esc(bl.ora)}"
+                    title="Orario del primo volo del blocco (vale per Tee 1 e Tee 10)"
+                    style="font-size:13px; padding:1px 4px; border-radius:4px; border:1px solid ${bl.manuale ? '#d97706' : '#c7d2fe'}; background:${bl.manuale ? '#fffbeb' : '#fff'};">
+                </label>`;
+                    }
+                    g.voci.forEach((v) => {
+                        const fl = v.flightStart != null ? ` [flight ${v.flightStart}]` : '';
+                        righe.push(`  ${v.label}: ${v.first} → ${v.last}${fl}${v.invertire ? '  INVERTIRE' : ''}`);
+                        const invBadge = v.invertire
+                            ? ` <span style="background:#dc2626; color:#fff; font-size:10px; font-weight:700; padding:1px 6px; border-radius:4px; margin-left:6px;">INVERTIRE</span>`
+                            : '';
+                        const flightInfo = v.flightStart != null
+                            ? ` <span style="color:#475569; font-size:11px;">· flight&nbsp;<strong style="color:#0f172a;">${v.flightStart}</strong></span>`
+                            : '';
+                        body += `<span style="background:#fff; border:1px solid #c7d2fe; border-radius:6px; padding:4px 10px; font-size:13px;">
+                  <span style="color:#64748b;">${esc(v.label)}:</span>
+                  <strong style="color:#0f172a;">${v.first} &rarr; ${v.last}</strong>${flightInfo}${invBadge}
+                </span>`;
+                    });
+                    body += '</div>';
+                });
+                body += '</div>';
+            });
         });
 
-        // Testo piatto per il pulsante "Copia" (una riga per quadrante)
-        const plain = quad
-            .map((q) => {
-                const fl = q.flightStart != null ? ` [flight ${q.flightStart}]` : '';
-                return `${q.categoria} ${q.label}: ${q.first} → ${q.last}${fl}${q.invertire ? '  INVERTIRE' : ''}`;
-            })
-            .join('\n');
+        const plain = righe.join('\n');
+        const resetBtn = hasManuali
+            ? `<button type="button" id="fig-orari-reset"
+              class="text-xs bg-amber-500 hover:bg-amber-600 text-white py-1 px-3 rounded mr-2">
+              Ripristina orari calcolati
+            </button>`
+            : '';
 
-        let html = `
+        return `
         <div id="fig-strip-box" style="margin-top:20px; padding:15px; background:#eef2ff; border:1px solid #c7d2fe; border-radius:8px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
             <strong style="color:#3730a3; font-size:15px;">
               <i class="fas fa-list-ol mr-1"></i> Striscia per sistema FIG
             </strong>
-            <button type="button" id="fig-strip-copy"
+            <div>${resetBtn}<button type="button" id="fig-strip-copy"
               class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white py-1 px-3 rounded"
-              data-strip="${plain.replace(/"/g, '&quot;')}">
+              data-strip="${esc(plain)}">
               Copia
-            </button>
-          </div>`;
-
-        categorie.forEach((cat) => {
-            html += `<div style="margin-bottom:8px;">
-              <div style="font-weight:600; font-size:13px; color:#1e293b; margin-bottom:4px;">${cat.nome}</div>
-              <div style="display:flex; flex-wrap:wrap; gap:8px;">`;
-            cat.voci.forEach((v) => {
-                const invBadge = v.invertire
-                    ? ` <span style="background:#dc2626; color:#fff; font-size:10px; font-weight:700; padding:1px 6px; border-radius:4px; margin-left:6px;">INVERTIRE</span>`
-                    : '';
-                const flightInfo = v.flightStart != null
-                    ? ` <span style="color:#475569; font-size:11px;">· flight&nbsp;${v.flightStart}</span>`
-                    : '';
-                html += `<span style="background:#fff; border:1px solid #c7d2fe; border-radius:6px; padding:4px 10px; font-size:13px;">
-                  <span style="color:#64748b;">${v.label}:</span>
-                  <strong style="color:#0f172a;">${v.first} &rarr; ${v.last}</strong>${flightInfo}${invBadge}
-                </span>`;
-            });
-            html += `</div></div>`;
-        });
-
-        html += `
+            </button></div>
+          </div>${body}
           <div style="font-size:11px; color:#64748b; margin-top:8px;">
-            "INVERTIRE" = quadrante in ordine decrescente: invertire i numeri all'interno di ogni terzetto.
+            Alto/Basso = Early/Late, Sx/Dx = Tee 1/Tee 10. "INVERTIRE" = quadrante in ordine decrescente: invertire i numeri all'interno di ogni terzetto.
+            Gli orari sono modificabili: il blocco cambiato e i successivi vengono ricalcolati (bordo arancio = orario manuale).
           </div>
         </div>`;
-
-        return html;
     }
 
     /* ════════════════════════════════════════════════════════════════════
@@ -1379,34 +1641,12 @@ export class QuadrantiLogic {
      * ════════════════════════════════════════════════════════════════════ */
 
     /**
-     * Etichette dei giocatori di un gruppo COSÌ COME VANNO MOSTRATE: i nomi
-     * se caricati (modalità nominativo), altrimenti i numeri. Salta i vuoti.
-     * Usato dalla Vista FIG per assomigliare all'orario ufficiale (che ha i nomi).
-     */
-    figGroupLabels(group) {
-        const out = [];
-        for (let j = 0; j < group.players.length; j++) {
-            const p = group.players[j];
-            if (p === '' || p == null) continue;
-            out.push(p);
-        }
-        return out;
-    }
-
-    /**
      * Chiave univoca di un flight, stabile tra Giro 1 e Giro 2 e indipendente
      * dalla modalità (nominativo/numerico). Usa playerIndices (indici nella
      * lista iscritti) quando disponibili, altrimenti i players grezzi.
      */
     figFlightKey(f) {
-        const g = f.group;
-        let ids;
-        if (g.playerIndices && g.playerIndices.length) {
-            ids = g.playerIndices.slice().sort((a, b) => a - b);
-        } else {
-            ids = g.players.filter((p) => p !== '' && p != null).slice().sort();
-        }
-        return f.category + '|' + ids.join(',');
+        return this.chiaveGruppo(f.category, f.group);
     }
 
     /**
@@ -1423,7 +1663,11 @@ export class QuadrantiLogic {
      *
      * @returns {string} HTML della Vista FIG (o messaggio se non disponibile)
      */
-    generateFigComparison() {
+    /**
+     * @param {{titolo?:string, club?:string, data?:string}} [meta]
+     *   intestazione dell'orario (gara, circolo, data) — opzionale.
+     */
+    generateFigComparison(meta = {}) {
         // Preserva figQuadranti: generateDoubleTee lo sovrascrive.
         const savedFigQuadranti = this.figQuadranti;
 
@@ -1461,31 +1705,36 @@ export class QuadrantiLogic {
             return map;
         };
 
+        // Numerazione FIG: il match del Giro 1 identifica il flight anche nel
+        // Giro 2 (stesso numero, vedi orario ufficiale "giro 1 e giro 2").
         const match1 = assignMatches(flights1);
-        const match2 = assignMatches(flights2);
 
         // Indicizza giorno 2 per chiave
         const g2byKey = {};
         flights2.forEach((f) => { g2byKey[keyOf(f)] = f; });
 
-        // Costruisce le righe combinate. I "giocatori" sono le etichette così
-        // come vanno mostrate: nomi se caricati, altrimenti numeri.
+        // Una riga per flight con i giocatori ordinati per numero (Nr.).
         const righe = flights1.map((f1) => {
             const k = keyOf(f1);
             const f2 = g2byKey[k] || null;
             return {
                 category: f1.category,
-                giocatori: this.figGroupLabels(f1.group),
+                giocatori: this.figGroupPlayers(f1.group),
                 g1: { match: match1[k], ora: f1.ora, tee: f1.tee },
-                g2: f2 ? { match: match2[k], ora: f2.ora, tee: f2.tee } : null,
+                g2: f2 ? { match: match1[k], ora: f2.ora, tee: f2.tee } : null,
             };
         });
 
-        // Raggruppa per categoria, ordina per match Giro 1
+        const titoloBase = String(meta.titolo || '')
+            .replace(/\s*[-–]?\s*\b(MASCHILE|FEMMINILE)\b\s*/gi, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
         const sezioni = [
-            { nome: 'Uomini', cat: 'M' },
-            { nome: 'Donne',  cat: 'F' },
+            { nome: 'Uomini', cat: 'M', genere: 'MASCHILE' },
+            { nome: 'Donne',  cat: 'F', genere: 'FEMMINILE' },
         ];
+        const th = 'border-bottom:1px solid #1e293b; padding:3px 6px; font-weight:600;';
+        const td = 'padding:2px 8px; vertical-align:top; white-space:nowrap;';
 
         let html = '';
         sezioni.forEach((sez) => {
@@ -1494,43 +1743,89 @@ export class QuadrantiLogic {
                 .sort((a, b) => a.g1.match - b.g1.match);
             if (rows.length === 0) return;
 
-            html += `<h4 style="margin:14px 0 6px; font-weight:600; color:#1e293b;">${sez.nome}</h4>`;
-            html += `<table style="width:100%; border-collapse:collapse; font-size:13px;">
+            const titolo = titoloBase ? `${titoloBase} - ${sez.genere}` : sez.nome;
+            html += `<section class="fig-doc" data-cat="${sez.cat}" style="margin-bottom:28px;">
+              <div style="margin:4px 0 10px;">
+                <div style="font-weight:700; font-size:15px; color:#0f172a;">${escapeHtml(titolo)}</div>
+                ${meta.club ? `<div style="font-size:13px; color:#334155;">${escapeHtml(meta.club)}</div>` : ''}
+                <div style="font-size:13px; color:#334155;">Orario di partenza giro 1 e giro 2${meta.data ? ` - ${escapeHtml(meta.data)}` : ''}</div>
+              </div>`;
+
+            // Una tabella per tee (l'orario ufficiale va a pagina nuova col Tee 10).
+            [1, 10].forEach((tee, ti) => {
+                const blocco = rows.filter((r) => r.g1.tee === tee);
+                if (blocco.length === 0) return;
+                const pb = ti > 0 ? ' page-break-before:always; break-before:page;' : '';
+                html += `<table class="fig-tee" data-tee="${tee}" style="width:100%; border-collapse:collapse; font-size:12px; margin-bottom:14px;${pb}">
               <thead>
-                <tr style="background:#eef2ff;">
-                  <th colspan="3" style="border:1px solid #c7d2fe; padding:4px;">Giro 1</th>
-                  <th colspan="3" style="border:1px solid #c7d2fe; padding:4px;">Giro 2</th>
-                  <th rowspan="2" style="border:1px solid #c7d2fe; padding:4px;">Giocatori</th>
+                <tr>
+                  <th colspan="3" style="text-align:left; padding:3px 6px; font-weight:700;">Giro 1</th>
+                  <th colspan="3" style="text-align:left; padding:3px 6px; font-weight:700;">Giro 2</th>
+                  <th colspan="2"></th>
                 </tr>
-                <tr style="background:#f1f5f9;">
-                  <th style="border:1px solid #c7d2fe; padding:3px;">Match</th>
-                  <th style="border:1px solid #c7d2fe; padding:3px;">Ora</th>
-                  <th style="border:1px solid #c7d2fe; padding:3px;">Tee</th>
-                  <th style="border:1px solid #c7d2fe; padding:3px;">Match</th>
-                  <th style="border:1px solid #c7d2fe; padding:3px;">Ora</th>
-                  <th style="border:1px solid #c7d2fe; padding:3px;">Tee</th>
+                <tr>
+                  <th style="${th} text-align:center;">Match</th>
+                  <th style="${th} text-align:center;">Ora</th>
+                  <th style="${th} text-align:center;">Tee</th>
+                  <th style="${th} text-align:center;">Match</th>
+                  <th style="${th} text-align:center;">Ora</th>
+                  <th style="${th} text-align:center;">Tee</th>
+                  <th style="${th} text-align:right;">Nr.</th>
+                  <th style="${th} text-align:left; width:100%;">Nome</th>
                 </tr>
               </thead>
               <tbody>`;
 
-            rows.forEach((r) => {
-                const td = 'border:1px solid #e2e8f0; padding:3px 6px; text-align:center;';
-                const g2 = r.g2;
-                html += `<tr>
-                  <td style="${td} font-weight:600;">${r.g1.match}</td>
-                  <td style="${td}">${r.g1.ora}</td>
-                  <td style="${td}">${r.g1.tee}</td>
-                  <td style="${td} font-weight:600;">${g2 ? g2.match : '—'}</td>
-                  <td style="${td}">${g2 ? g2.ora : '—'}</td>
-                  <td style="${td}">${g2 ? g2.tee : '—'}</td>
-                  <td style="${td} text-align:left;">${r.giocatori.map(escapeHtml).join('<br>')}</td>
+                blocco.forEach((r) => {
+                    const n = Math.max(1, r.giocatori.length);
+                    const g2 = r.g2;
+                    const rs = n > 1 ? ` rowspan="${n}"` : '';
+                    const sep = 'border-top:1px solid #e2e8f0;';
+                    const matchCells = `
+                  <td${rs} class="fig-match" style="${td} ${sep} text-align:center; font-weight:600;">${r.g1.match}</td>
+                  <td${rs} style="${td} ${sep} text-align:center;">${r.g1.ora}</td>
+                  <td${rs} style="${td} ${sep} text-align:center;">${r.g1.tee}</td>
+                  <td${rs} style="${td} ${sep} text-align:center; font-weight:600;">${g2 ? g2.match : '—'}</td>
+                  <td${rs} style="${td} ${sep} text-align:center;">${g2 ? g2.ora : '—'}</td>
+                  <td${rs} style="${td} ${sep} text-align:center;">${g2 ? g2.tee : '—'}</td>`;
+                    if (r.giocatori.length === 0) {
+                        html += `<tr class="fig-flight">${matchCells}<td style="${td} ${sep}"></td><td style="${td} ${sep}"></td></tr>`;
+                        return;
+                    }
+                    r.giocatori.forEach((g, gi) => {
+                        const bordo = gi === 0 ? sep : '';
+                        html += `<tr${gi === 0 ? ' class="fig-flight"' : ''}>${gi === 0 ? matchCells : ''}
+                  <td style="${td} ${bordo} text-align:right;">${g.nr != null ? g.nr : ''}</td>
+                  <td style="${td} ${bordo}">${escapeHtml(g.nome)}</td>
                 </tr>`;
-            });
+                    });
+                });
 
-            html += `</tbody></table>`;
+                html += `</tbody></table>`;
+            });
+            html += `</section>`;
         });
 
         return html;
+    }
+
+    /**
+     * Giocatori di un flight per la Vista FIG: numero (rango = indice + 1) e
+     * nome come nell'orario ufficiale ("COGNOME NOME", senza virgola),
+     * ordinati per numero crescente. In modalità numerica il nome è vuoto.
+     * @returns {Array<{nr:number|null, nome:string}>}
+     */
+    figGroupPlayers(group) {
+        const out = [];
+        const idx = Array.isArray(group.playerIndices) ? group.playerIndices : [];
+        for (let j = 0; j < group.players.length; j++) {
+            const p = group.players[j];
+            if (p === '' || p == null) continue;
+            const numerico = typeof p === 'number' || /^\d+$/.test(String(p));
+            const nr = numerico ? Number(p) : (Number.isInteger(idx[j]) ? idx[j] + 1 : null);
+            out.push({ nr, nome: numerico ? '' : String(p).replace(/\s*,\s*/g, ' ').trim() });
+        }
+        return out.sort((a, b) => (a.nr ?? Infinity) - (b.nr ?? Infinity));
     }
 
     /**
@@ -1564,6 +1859,7 @@ export class QuadrantiLogic {
      * @returns {string} HTML table content
      */
     generateSingleTee(round) {
+        this._giroCorrente = round;
         let mod = parseInt(this.config.playersPerFlight, 10);
         const players = parseInt(this.config.players, 10);
         const proette = parseInt(this.config.proette, 10);

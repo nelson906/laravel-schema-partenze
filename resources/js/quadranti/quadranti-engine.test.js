@@ -212,3 +212,126 @@ describe('REGOLE patrocinate/trofei · 2° giro = MIRROR bilanciato del 1°', ()
     });
   }
 });
+
+// ─── MODALITÀ #compatto: Early/Late vs Early(<14) ───────────────────────────
+// Regressione: il refactor "motore unico" aveva perso la modalità continua.
+// renderBlocchi deve leggere config.compatto per lo stacco dell'incrocio.
+describe('MOTORE · Modalità Early/Late vs Early(<14)', () => {
+  beforeEach(reset);
+
+  // Legge i 3 campi dell'info-box (Ultima Early, Prima Late, Fine Gara).
+  const info = (html) => [...html.matchAll(/<strong[^>]*>(\d\d:\d\d)<\/strong>/g)].map((m) => m[1]);
+  const min = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
+
+  const base = {
+    garaNT: 'Gara con patrocinio FIG', players: 102, proette: 42,
+    doppiePartenze: 'Doppie Partenze', startTime: '08:00', gap: '00:10', round: '04:30',
+  };
+
+  it('Early/Late: il blocco Late attende l\'incrocio (mezzo giro)', () => {
+    const [lastEarly, firstLate] = info(mk({ ...base, compatto: 'Early/Late' }).generateDoubleTee('prima'));
+    // stacco = gap + mezzo giro (04:30 → 02:15) = 02:25
+    expect(min(firstLate) - min(lastEarly)).toBe(10 + 135);
+  });
+
+  it('Early(<14): nessun incrocio, blocchi accorpati (stacco breve 00:10)', () => {
+    const [lastEarly, firstLate] = info(mk({ ...base, compatto: 'Early(<14)' }).generateDoubleTee('prima'));
+    expect(min(firstLate) - min(lastEarly)).toBe(10 + 10);
+  });
+
+  // Il margine e' mostrato SEMPRE quando c'e' un blocco Late, anche in
+  // Early/Late: con la Ripartenza impostata a mano puo' cambiare.
+  it('Early/Late: campo margine presente, un stacco dopo il giro dell\'ultima Early', () => {
+    const html = mk({ ...base, compatto: 'Early/Late' }).generateDoubleTee('prima');
+    expect(html).toContain('repeat(4, 1fr)');
+    expect(html).toContain("Margine all'incrocio");
+    expect(html).not.toContain('Sovrapposizione');
+    expect(html).toMatch(/>\+0:10<\/strong>/);
+  });
+
+  it('Early/Late: Ripartenza manuale troppo presto → sovrapposizione', () => {
+    const l = mk({ ...base, compatto: 'Early/Late' });
+    l.generateDoubleTee('prima');
+    const late = l.figQuadranti.find((q) => q.blocco.sessione === 'late');
+    const early = l.figQuadranti.filter((q) => q.blocco.sessione === 'early').pop();
+    // Ripartenza 10 minuti dopo l'ultima partenza Early: il campo e' tutto
+    // in gioco quando i primi tornano? No (102 giocatori) → incrocio violato.
+    l.orariBlocchi = { [late.blocco.chiave]: '10:00' };
+    const html = l.generateDoubleTee('prima');
+    expect(early).toBeTruthy();
+    expect(html).toContain("Sovrapposizione all'incrocio");
+  });
+
+  it('Early/Late: campo piccolo con Ripartenza anticipata → onda unica, nessun conflitto', () => {
+    const l = mk({ ...base, compatto: 'Early/Late', players: 30, proette: 6 });
+    l.generateDoubleTee('prima');
+    const late = l.figQuadranti.find((q) => q.blocco.sessione === 'late');
+    l.orariBlocchi = { [late.blocco.chiave]: '08:50' };
+    const html = l.generateDoubleTee('prima');
+    expect(html).toContain("Margine all'incrocio");
+    expect(html).toContain('tutti a stacco pieno');
+  });
+
+  it('Early(<14): il margine CAMBIA col numero di giocatori', () => {
+    const margine = (players, proette) => mk({
+      ...base, compatto: 'Early(<14)', players, proette,
+    }).generateDoubleTee('prima').match(/[+\u2212]\d+:\d\d(?=<\/strong>)/g).pop();
+    const piccolo = margine(30, 6);    // 12 voli → 6 per tee
+    const medio = margine(60, 12);     // 24 voli → 12 per tee
+    const grande = margine(102, 42);   // 48 voli → 24 per tee
+    expect(new Set([piccolo, medio, grande]).size).toBe(3);
+    // campo piccolo/medio: tutto in gioco prima dell'incrocio → positivo
+    expect(piccolo.startsWith('+')).toBe(true);
+    // campo grande: si fa partire gente quando i primi tornano all'incrocio
+    expect(grande.startsWith('\u2212')).toBe(true);
+  });
+
+  it('Early(<14): campo piccolo → onda unica, nessuna sovrapposizione', () => {
+    const html = mk({ ...base, compatto: 'Early(<14)', players: 30, proette: 6 }).generateDoubleTee('prima');
+    expect(html).toContain("Margine all'incrocio");
+    expect(html).not.toContain('Sovrapposizione');
+    expect(html).toContain('6 voli/tee, tutti a stacco pieno');
+  });
+
+  it('Early(<14): campo grande → sovrapposizione con sforo e voli/tee', () => {
+    const html = mk({ ...base, compatto: 'Early(<14)', players: 102, proette: 42 }).generateDoubleTee('prima');
+    expect(html).toContain("Sovrapposizione all'incrocio");
+    expect(html).toContain('servono altri 2:15');
+    expect(html).toContain('solo 12 voli/tee su 24 restano a stacco');
+  });
+
+  it('margineIncrocio(): la soglia e\' lo stacco minimo, non lo zero', () => {
+    const l = mk({ ...base, startTime: '08:00', gap: '00:10', round: '04:30' });
+    // incrocio = 08:00 + mezzo giro (02:15) = 10:15; ultima partenza ammessa 10:05
+    expect(l.margineIncrocio('08:20', ['08:00', '08:10', '08:20'])).toMatchObject({
+      minuti: 115, incrocio: '10:15', gap: '+1:55', serve: '0:00',
+      sovrapposizione: false, voliPerTee: 3, voliEntro: 3,
+    });
+    // margine esattamente 00:10 → ancora buono (limite incluso)
+    expect(l.margineIncrocio('10:05', ['08:00', '10:05'])).toMatchObject({
+      minuti: 10, gap: '+0:10', serve: '0:00', sovrapposizione: false, voliEntro: 2,
+    });
+    // margine ZERO = due flight alla stessa ora → SOVRAPPOSIZIONE, servono 10'
+    expect(l.margineIncrocio('10:15', ['08:00', '10:15'])).toMatchObject({
+      minuti: 0, gap: '+0:00', serve: '0:10', sovrapposizione: true, voliEntro: 1,
+    });
+    // margine positivo ma sotto soglia → comunque segnalato
+    expect(l.margineIncrocio('10:10', ['08:00', '10:10'])).toMatchObject({
+      minuti: 5, gap: '+0:05', serve: '0:05', sovrapposizione: true,
+    });
+    // 10:10, 10:20 e 12:20 oltre il limite 10:05 → un solo volo a stacco
+    expect(l.margineIncrocio('12:20', ['10:00', '10:10', '10:20', '12:20'])).toMatchObject({
+      minuti: -125, gap: '\u22122:05', serve: '2:15', sovrapposizione: true,
+      voliPerTee: 4, voliEntro: 1,
+    });
+  });
+
+  it('Early(<14) anticipa la fine gara rispetto a Early/Late', () => {
+    const a = info(mk({ ...base, compatto: 'Early/Late' }).generateDoubleTee('prima'));
+    const b = info(mk({ ...base, compatto: 'Early(<14)' }).generateDoubleTee('prima'));
+    expect(min(b[2])).toBeLessThan(min(a[2]));
+    // i flight (ranghi/quadranti) NON cambiano: cambia solo la colonna orari
+    expect(bodyRows(mk({ ...base, compatto: 'Early(<14)' }).generateDoubleTee('prima')))
+      .toEqual(bodyRows(mk({ ...base, compatto: 'Early/Late' }).generateDoubleTee('prima')));
+  });
+});

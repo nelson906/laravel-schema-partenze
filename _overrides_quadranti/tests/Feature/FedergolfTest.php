@@ -65,7 +65,7 @@ class FedergolfTest extends TestCase
      */
     private function futureDate(int $days): string
     {
-        return (new \DateTime("+{$days} days"))->format('d/m/Y');
+        return (new \DateTime(sprintf('%+d days', $days)))->format('d/m/Y');
     }
 
     /* ─── getIscritti: macchina a stati ──────────────────── */
@@ -536,6 +536,39 @@ class FedergolfTest extends TestCase
             ->assertJsonMissing(['id' => 333]);
 
         $this->assertCount(1, $this->jsonList($response, 'gare'));
+    }
+
+    public function test_load_all_competitions_keeps_competitions_in_progress(): void
+    {
+        $this->fakeFedergolf([
+            'data' => [
+                // Aperta ieri, nessuna chiusura indicata: in corso (margine 3 giorni).
+                ['annullata' => 0, 'nome' => 'GARA IN CORSO', 'data' => $this->futureDate(-1), 'competition_id' => 701],
+                // Chiude oggi: ancora in elenco.
+                ['annullata' => 0, 'nome' => 'GARA CHIUDE OGGI', 'data' => $this->futureDate(-5), 'data_fine' => $this->futureDate(0), 'competition_id' => 702],
+                // Periodo nel testo, chiusura domani.
+                ['annullata' => 0, 'nome' => 'GARA PERIODO', 'data' => $this->futureDate(-2).' - '.$this->futureDate(1), 'competition_id' => 703],
+                // Chiusa ieri: esclusa anche se aperta da poco.
+                ['annullata' => 0, 'nome' => 'GARA CHIUSA', 'data' => $this->futureDate(-2), 'data_fine' => $this->futureDate(-1), 'competition_id' => 704],
+                // Aperta 10 giorni fa, nessuna chiusura: esclusa.
+                ['annullata' => 0, 'nome' => 'GARA VECCHIA', 'data' => $this->futureDate(-10), 'competition_id' => 705],
+            ],
+        ]);
+
+        $response = $this->actingAs(User::factory()->create())
+            ->post('/user/federgolf/load-all')
+            ->assertOk()
+            ->assertJsonFragment(['id' => 701])
+            ->assertJsonFragment(['id' => 702])
+            ->assertJsonFragment(['id' => 703])
+            ->assertJsonMissing(['id' => 704])
+            ->assertJsonMissing(['id' => 705]);
+
+        $this->assertCount(3, $this->jsonList($response, 'gare'));
+        // Ordinamento per data di apertura: 702 (-5), 703 (-2), 701 (-1).
+        $response->assertJsonPath('gare.0.id', 702)
+            ->assertJsonPath('gare.1.id', 703)
+            ->assertJsonPath('gare.2.id', 701);
     }
 
     public function test_load_all_competitions_excludes_postponed_by_name(): void
