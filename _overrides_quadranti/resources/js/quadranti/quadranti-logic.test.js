@@ -1280,12 +1280,49 @@ describe('Striscia FIG — quadrantRange / figQuadranti / generateFigStrip', () 
       });
     });
 
-    it('invertire=true per ordine decrescente (45→1)', () => {
+    it('blocco decrescente (45→1) con terzetti crescenti → invertire=true', () => {
       logic.figQuadranti = [];
       logic.pushFigQuadrante('Uomini', 'Q2', [
-        { players: [45, 44, 43] }, { players: [3, 2, 1] },
+        { players: [43, 44, 45] }, { players: [1, 2, 3] },
       ]);
-      expect(logic.figQuadranti[0].invertire).toBe(true);
+      expect(logic.figQuadranti[0]).toMatchObject({ first: 45, last: 1, invertire: true });
+    });
+
+    it('blocco decrescente con terzetti decrescenti (27 26 25) → invertire=false', () => {
+      logic.figQuadranti = [];
+      logic.pushFigQuadrante('Uomini', 'Q1', [
+        { players: [27, 26, 25] }, { players: [3, 2, 1] },
+      ]);
+      expect(logic.figQuadranti[0]).toMatchObject({ first: 27, last: 1, invertire: false });
+    });
+
+    it('blocco crescente con terzetti decrescenti (30 29 28 … 54 53 52) → invertire=true', () => {
+      logic.figQuadranti = [];
+      logic.pushFigQuadrante('Uomini', 'Q2', [
+        { players: [30, 29, 28] }, { players: [54, 53, 52] },
+      ]);
+      expect(logic.figQuadranti[0]).toMatchObject({ first: 28, last: 54, invertire: true });
+    });
+
+    it('un solo flight: verso = ordine interno, niente da invertire', () => {
+      logic.figQuadranti = [];
+      logic.pushFigQuadrante('Uomini', 'Q1', [{ players: [9, 8, 7] }]);
+      expect(logic.figQuadranti[0]).toMatchObject({ first: 9, last: 7, invertire: false });
+    });
+
+    it('giro finale 54 buche: INVERTIRE solo dove i terzetti vanno contro il blocco', () => {
+      for (const tee of ['Doppie Partenze', 'Tee Unico']) {
+        const l = makeLogic({
+          players: 144, proette: 48, playersCut: 54, proetteCut: 27,
+          playersPerFlight: 3, garaNT: 'Gara 54 buche', doppiePartenze: tee,
+          nominativo: 'Off', startTime: '08:00', gap: '00:10', round: '04:30',
+        });
+        if (tee === 'Tee Unico') l.generateSingleTee('finale'); else l.generateDoubleTee('finale');
+        const inv = Object.fromEntries(l.figQuadranti.map((q) => [`${q.categoria} ${q.first}→${q.last}`, q.invertire]));
+        // terzetti sempre decrescenti (27 26 25): 27→1 va bene, 28→54 va invertito
+        expect(inv['Uomini 27→1']).toBe(false);
+        expect(inv['Uomini 28→54']).toBe(true);
+      }
     });
   });
 

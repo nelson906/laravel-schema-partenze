@@ -1452,7 +1452,9 @@ export class QuadrantiLogic {
      *
      * L'ordine in cui sono restituiti riflette la direzione di percorrenza:
      *   - quadrante crescente  → { first: min, last: max }
-     *   - quadrante decrescente → { first: max, last: min }  (INVERTIRE)
+     *   - quadrante decrescente → { first: max, last: min }
+     * `invertire` è true quando l'ordine interno dei terzetti è opposto al
+     * verso del blocco (vedi sotto).
      *
      * La direzione si determina confrontando il numero più basso del PRIMO
      * flight con quello dell'ULTIMO: se il primo flight ha numeri più alti,
@@ -1481,20 +1483,40 @@ export class QuadrantiLogic {
         const min = Math.min(...allNums);
         const max = Math.max(...allNums);
 
-        // Direzione: confronta il minimo del primo flight con quello dell'ultimo
+        // Ordine INTERNO dei flight (terzetti): maggioranza dei flight con
+        // almeno 2 giocatori. null = nessun flight da 2+ (niente da invertire).
+        let giu = 0, su = 0;
+        groups.forEach((g) => {
+            const n = numbersOf(g);
+            if (n.length < 2) return;
+            if (n[0] > n[n.length - 1]) giu++;
+            else if (n[0] < n[n.length - 1]) su++;
+        });
+        const internoDecrescente = (giu + su) === 0 ? null : giu > su;
+
+        // Direzione del BLOCCO: minimo del primo flight vs minimo dell'ultimo.
+        // Con un solo flight la direzione è quella interna.
         const firstNums = numbersOf(groups[0]);
         const lastNums = numbersOf(groups[groups.length - 1]);
-        const decrescente = firstNums.length > 0 && lastNums.length > 0
-            && Math.min(...firstNums) > Math.min(...lastNums);
+        const decrescente = groups.length > 1
+            ? (firstNums.length > 0 && lastNums.length > 0
+                && Math.min(...firstNums) > Math.min(...lastNums))
+            : internoDecrescente === true;
+
+        // INVERTIRE: il sistema FIG, dato "first → last", compone i terzetti
+        // nello stesso verso del blocco. Serve invertire solo quando l'ordine
+        // interno dei terzetti è opposto al verso del blocco (es. blocco
+        // 27 → 1 con terzetti 25 26 27, oppure blocco 28 → 54 con 30 29 28).
+        const invertire = internoDecrescente !== null && internoDecrescente !== decrescente;
 
         return decrescente
-            ? { first: max, last: min }
-            : { first: min, last: max };
+            ? { first: max, last: min, invertire }
+            : { first: min, last: max, invertire };
     }
 
     /**
      * Aggiunge una voce a this.figQuadranti se il quadrante non è vuoto.
-     * invertire = true quando l'ordine è decrescente (first > last).
+     * invertire = true quando i terzetti vanno nel verso opposto al blocco.
      * Le etichette Q1..Q4 diventano la posizione in tabella (Alto/Basso Sx/Dx);
      * un'etichetta già usata nella stessa categoria riceve un progressivo.
      * blocco = {chiave, ora, manuale, sessione} per i blocchi con orario editabile.
@@ -1519,7 +1541,7 @@ export class QuadrantiLogic {
             baseLabel,
             first: r.first,
             last: r.last,
-            invertire: Number(r.first) > Number(r.last),
+            invertire: r.invertire,
             flightStart,
             blocco,
         });
@@ -1626,7 +1648,7 @@ export class QuadrantiLogic {
             </button></div>
           </div>${body}
           <div style="font-size:11px; color:#64748b; margin-top:8px;">
-            Alto/Basso = Early/Late, Sx/Dx = Tee 1/Tee 10. "INVERTIRE" = quadrante in ordine decrescente: invertire i numeri all'interno di ogni terzetto.
+            Alto/Basso = Early/Late, Sx/Dx = Tee 1/Tee 10. "INVERTIRE" = i terzetti vanno nel verso opposto al quadrante: invertire i numeri all'interno di ogni terzetto.
             Gli orari sono modificabili: il blocco cambiato e i successivi vengono ricalcolati (bordo arancio = orario manuale).
           </div>
         </div>`;
