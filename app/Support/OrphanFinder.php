@@ -18,18 +18,24 @@ use Symfony\Component\Finder\Finder;
  */
 final class OrphanFinder
 {
-    /** Pagine d'ingresso: si raggiungono scrivendo l'indirizzo o dal login. */
-    private const ENTRY_ROUTES = ['login', 'password.request', 'password.reset', 'dashboard', 'home'];
+    /**
+     * Pagine d'ingresso: si raggiungono scrivendo l'indirizzo, dal login o
+     * dai redirect interni di Laravel (conferma password, verifica email).
+     */
+    private const ENTRY_ROUTES = ['login', 'password.request', 'password.reset', 'dashboard', 'home',
+        'password.confirm', 'verification.notice', 'verification.verify'];
 
     /** @var array<string, string>|null percorso => contenuto */
     private ?array $files = null;
 
-    /** @return array<string, string> app/, resources/, routes/ e config/, file per file */
+    /** @return array<string, string> app/, resources/, routes/, config/ e public/js, file per file */
     private function files(): array
     {
         if ($this->files === null) {
             $this->files = [];
-            $finder = (new Finder)->files()->in([app_path(), resource_path(), base_path('routes'), config_path()])
+            // public/js: gli script scritti a mano (non compilati da Vite)
+            $dirs = array_filter([app_path(), resource_path(), base_path('routes'), config_path(), public_path('js')], 'is_dir');
+            $finder = (new Finder)->files()->in($dirs)->notName('*.min.js')
                 ->name(['*.php', '*.js', '*.jsx', '*.ts', '*.vue']);
             foreach ($finder as $file) {
                 $this->files[$file->getRealPath() ?: $file->getPathname()] = $file->getContents();
@@ -97,8 +103,13 @@ final class OrphanFinder
                 continue;
             }
             // view('admin.x') non e' un link anche se il nome della vista
-            // coincide con quello della rotta
-            $src = (string) preg_replace("/view\\(\\s*['\"][^'\"]+['\"]/", 'view(', $this->sources($this->ownViews($route)));
+            // coincide con quello della rotta; ->name('x') e' la definizione
+            // della rotta stessa, non un collegamento
+            $src = (string) preg_replace(
+                ["/view\\(\\s*['\"][^'\"]+['\"]/", "/->name\\(\\s*['\"][^'\"]+['\"]\\s*\\)/"],
+                ['view(', '->name()'],
+                $this->sources($this->ownViews($route))
+            );
             $quoted = preg_quote($name, '/');
             if (preg_match("/['\"]{$quoted}['\"]/", $src) === 1) {
                 continue;
