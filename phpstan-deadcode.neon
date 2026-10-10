@@ -1,0 +1,12 @@
+# Codice morto (strumento comune ai progetti Laravel di Alberto, 2026-10).
+#
+#   composer codice-morto
+#   (= vendor/bin/phpstan analyse -c phpstan-deadcode.neon --memory-limit=2G)
+#
+# shipmonk/dead-code-detector ^1.4 riconosce Laravel: rotte -> azioni dei
+# controller, comandi artisan, relazioni e scope Eloquent, viste Blade.
+# Prima di togliere una voce verifica anche in resources/views e routes; un
+# falso allarme va in ignoreErrors qui sotto, con il motivo.
+includes:
+    - phpstan.neon
+    - vendor/shipmonk/dead-code-detector/rules.neon

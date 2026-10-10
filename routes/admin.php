@@ -13,7 +13,8 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(function () {
-    Route::resource('users', UserController::class);
+    // Nessuna pagina di dettaglio: UserController non ha show() (2026-10-10)
+    Route::resource('users', UserController::class)->except(['show']);
     Route::patch('users/{user}/toggle-active', [UserController::class, 'toggleActive'])
         ->name('users.toggle-active');
 });
