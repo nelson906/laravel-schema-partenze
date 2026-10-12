@@ -12,7 +12,7 @@
 /.vscode
 /.zed
 /auth.json
-/node_modules
+node_modules/
 /public/build
 /public/hot
 /public/storage
@@ -25,3 +25,4 @@ Thumbs.db
 .ftp-deploy-sync-state.json
 vendor.zip
 ISTRUZIONI-VERIFICA.md
+qa-*.txt

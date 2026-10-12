@@ -253,7 +253,7 @@ Due bottoni nel pannello azioni:
 ## 13. Motore a quadranti (aggiornamento 2026-06)
 
 Refactoring per ridurre i renderer paralleli a un **core unico** che applica la
-regola §3.1 una volta sola. Documenti collegati: `AUDIT_QUADRANTI.md` (diagnosi),
+regola §3.1 una volta sola. Documenti collegati:
 test `quadranti-engine.test.js` (fixture PDF) e `quadranti-regression.test.js`
 (invarianti universali).
 
