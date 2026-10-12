@@ -751,6 +751,23 @@ describe('REGRESSIONE — generateDoubleTee (prima/seconda)', () => {
     expect(Math.min(...tee10.map((x) => x.flightStart)))
       .toBeGreaterThan(Math.max(...tee1.map((x) => x.flightStart)));
   });
+
+  it('Modalità: Early/Late attende il mezzo giro, Early(<14) accorpa Early e Late', () => {
+    // Regressione del refactoring "motore comune" (8c0dbf5): renderBlocchi
+    // ignorava config.compatto e le due modalità davano gli stessi orari.
+    const primaLate = (compatto) => {
+      const html = makeLogic({
+        players: 30, proette: 6, playersPerFlight: 3, nominativo: 'Off',
+        garaNT: 'Gara 54 buche', doppiePartenze: 'Doppie Partenze',
+        compatto, startTime: '08:00', gap: '00:10', round: '04:30',
+      }).generateDoubleTee('prima');
+      return html.match(/(\d\d:\d\d)<\/strong>\s*<span>Prima Partenza Late/)[1];
+    };
+    // Ultima Early 08:30 → +gap +mezzo giro (02:15) = 10:55
+    expect(primaLate('Early/Late')).toBe('10:55');
+    // Ultima Early 08:30 → +gap +stacco breve (00:10) = 08:50
+    expect(primaLate('Early(<14)')).toBe('08:50');
+  });
 });
 
 // ─── Giro finale 54 buche (single tee, classifica) ──────────────────────────
