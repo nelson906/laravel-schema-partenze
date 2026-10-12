@@ -4,16 +4,12 @@ import importX from 'eslint-plugin-import-x';
 
 export default [
     {
-        // Cartelle mai analizzate: dipendenze, build, mirror di _overrides_*
-        // (_overrides_quadranti e' una copia di resources/js/quadranti,
-        // analizzarla duplicherebbe ogni errore).
+        // Cartelle mai analizzate: dipendenze, build, PDF degli schemi.
         ignores: [
             'node_modules/**',
             'vendor/**',
             'public/build/**',
             'storage/**',
-            '_overrides_admin/**',
-            '_overrides_quadranti/**',
             'Schemi partenze/**',
         ],
     },

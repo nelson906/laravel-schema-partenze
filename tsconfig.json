@@ -12,5 +12,5 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
   "include": ["resources/js/quadranti/*.js", "resources/js/types/*.d.ts"],
-  "exclude": ["node_modules", "resources/js/**/*.test.js", "_overrides_admin", "_overrides_quadranti"]
+  "exclude": ["node_modules", "resources/js/**/*.test.js"]
 }

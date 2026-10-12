@@ -1,6 +1,6 @@
 # Schema Partenze — Simulatore Tempi di Partenza Golf
 
-Applicazione Laravel standalone per la simulazione dei tempi di partenza (quadranti) nelle gare di golf, estratta dal progetto `golf-arbitri-clean` e mantenuta in sincronia tramite le cartelle `_overrides_*`.
+Applicazione Laravel standalone per la simulazione dei tempi di partenza (quadranti) nelle gare di golf, nata come spin-off di `golf-arbitri-clean`. Il simulatore esiste solo qui: golf-arbitri-clean lo apre con l'accesso automatico (vedi sotto).
 
 ## Funzionalità
 
@@ -56,7 +56,7 @@ Segreto vuoto = funzione spenta. Codice: `SsoController`, `App\Support\SsoToken`
 
 ## Struttura particolare
 
-Le cartelle `_overrides_quadranti/` e `_overrides_admin/` sono mirror dei file condivisi con `golf-arbitri-clean` e vanno tenute in sincronia: ogni modifica ai file mirrorati va replicata nella copia corrispondente. I file fuori dai mirror (es. auth, bootstrap) vanno portati a mano nell'altro progetto.
+Nessuna sincronizzazione di codice con `golf-arbitri-clean` (dal 2026-10): il simulatore vive solo qui, gestione utenti e Aruba Tools evolvono separatamente nelle due app. L'unico punto di contatto è l'accesso automatico (`/sso`).
 
 Gli schemi di gara di riferimento (PDF) sono in `Schemi partenze/`.
 

@@ -13,12 +13,8 @@ parameters:
         - routes
         - tests
 
-    # I mirror _overrides_* sono copie 1:1 di file gia' analizzati:
-    # analizzarli duplicherebbe ogni errore.
     excludePaths:
         analyseAndScan:
-            - _overrides_admin
-            - _overrides_quadranti
             - Schemi partenze
             - vendor
             - node_modules
