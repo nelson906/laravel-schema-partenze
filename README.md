@@ -41,6 +41,19 @@ php artisan test   # test PHP (Feature: auth, access control, quadranti, federgo
 npm test           # test JS (211 test, incluse suite di regressione quadranti)
 ```
 
+## Accesso automatico da golf-arbitri-clean
+
+La voce "Simulatore Tempi Partenza" di golf-arbitri-clean apre questa app con
+l'utente gia' collegato (link firmato, valido 60 secondi e una volta sola).
+Riconosce l'utente per email; se non esiste lo crea come Utente; un account
+disattivato resta fuori. Configurazione, stesso valore nelle due app:
+
+- qui: `SSO_SECRET=...`
+- golf-arbitri-clean: `PARTENZE_URL=<indirizzo di questa app>` e `PARTENZE_SSO_SECRET=...`
+
+Segreto vuoto = funzione spenta. Codice: `SsoController`, `App\Support\SsoToken`
+(formato identico a `App\Support\PartenzeSsoToken` di golf-arbitri-clean).
+
 ## Struttura particolare
 
 Le cartelle `_overrides_quadranti/` e `_overrides_admin/` sono mirror dei file condivisi con `golf-arbitri-clean` e vanno tenute in sincronia: ogni modifica ai file mirrorati va replicata nella copia corrispondente. I file fuori dai mirror (es. auth, bootstrap) vanno portati a mano nell'altro progetto.

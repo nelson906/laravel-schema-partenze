@@ -35,6 +35,13 @@ return [
         ],
     ],
 
+    // Ingresso automatico da golf-arbitri-clean: stesso valore di
+    // PARTENZE_SSO_SECRET la'. Vuoto = /sso disattivato (404).
+    'sso' => [
+        'secret' => env('SSO_SECRET'),
+        'ttl'    => (int) env('SSO_TTL', 60),
+    ],
+
     'federgolf' => [
         'ajax_url' => env('FEDERGOLF_AJAX_URL', 'https://www.federgolf.it/wp-admin/admin-ajax.php'),
     ],
