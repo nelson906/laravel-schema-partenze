@@ -16,6 +16,12 @@
         <include>
             <directory>app</directory>
         </include>
+        <!-- Esclusi dalla coverage (2026-10-17): tooling manutenzione hosting
+             Aruba (solo super admin), opera su filesystem/shell del server. -->
+        <exclude>
+            <file>app/Http/Controllers/SuperAdmin/ArubaToolsController.php</file>
+            <file>app/Helpers/SystemOperations.php</file>
+        </exclude>
     </source>
     <php>
         <env name="APP_ENV" value="testing"/>

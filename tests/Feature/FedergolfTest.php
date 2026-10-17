@@ -692,4 +692,173 @@ class FedergolfTest extends TestCase
 
         $this->assertStringContainsString('formato inatteso', $this->jsonString($response, 'message'));
     }
+
+    /* ─── Errori di rete e HTTP non specifici ─────────────── */
+
+    public function test_iscritti_timeout_when_federgolf_does_not_answer(): void
+    {
+        Http::fake(['www.federgolf.it/*' => Http::failedConnection()]);
+
+        $response = $this->actingAs(User::factory()->create())
+            ->post('/user/federgolf/iscritti', ['gara_id' => 3001])
+            ->assertOk()
+            ->assertJsonPath('state', 'error')
+            ->assertJsonPath('reason', 'timeout');
+
+        $this->assertStringContainsString('tempo massimo', $this->jsonString($response, 'message'));
+    }
+
+    public function test_iscritti_generic_http_error_reports_status(): void
+    {
+        // 400: non e' 404/429/401/403/5xx → ramo generico.
+        $this->fakeFedergolf([], 400);
+
+        $response = $this->actingAs(User::factory()->create())
+            ->post('/user/federgolf/iscritti', ['gara_id' => 3002])
+            ->assertOk()
+            ->assertJsonPath('state', 'error')
+            ->assertJsonPath('reason', 'http');
+
+        $this->assertStringContainsString('errore HTTP 400', $this->jsonString($response, 'message'));
+    }
+
+    public function test_load_all_competitions_timeout_when_federgolf_does_not_answer(): void
+    {
+        Http::fake(['www.federgolf.it/*' => Http::failedConnection()]);
+
+        $response = $this->actingAs(User::factory()->create())
+            ->post('/user/federgolf/load-all')
+            ->assertOk()
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('reason', 'timeout');
+
+        $this->assertStringContainsString('tempo massimo', $this->jsonString($response, 'message'));
+    }
+
+    public function test_load_all_competitions_generic_http_error_reports_status(): void
+    {
+        $this->fakeFedergolf([], 400);
+
+        $response = $this->actingAs(User::factory()->create())
+            ->post('/user/federgolf/load-all')
+            ->assertOk()
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('reason', 'http');
+
+        $this->assertStringContainsString('errore HTTP 400', $this->jsonString($response, 'message'));
+    }
+
+    /* ─── Righe malformate: saltate, non rompono l'elenco ─── */
+
+    public function test_iscritti_non_array_rows_are_skipped(): void
+    {
+        $this->fakeFedergolf([
+            'data' => ['processedData' => [
+                'riga-non-array',
+                42,
+                $this->entry('Mario Rossi'),
+            ]],
+        ]);
+
+        $this->actingAs(User::factory()->create())
+            ->post('/user/federgolf/iscritti', ['gara_id' => 3003])
+            ->assertOk()
+            ->assertJsonPath('state', 'ready')
+            ->assertJsonPath('ammessi', 1)
+            ->assertJsonPath('iscritti', ['Mario Rossi']);
+    }
+
+    public function test_load_all_competitions_malformed_rows_are_skipped(): void
+    {
+        $this->fakeFedergolf([
+            'data' => [
+                'riga-non-array',
+                ['annullata' => 0, 'nome' => 'GARA SENZA DATA', 'competition_id' => 901],
+                ['annullata' => 0, 'data' => $this->futureDate(30), 'competition_id' => 902],
+                ['annullata' => 0, 'nome' => 'GARA VALIDA', 'data' => $this->futureDate(30), 'competition_id' => 903],
+            ],
+        ]);
+
+        $response = $this->actingAs(User::factory()->create())
+            ->post('/user/federgolf/load-all')
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonFragment(['id' => 903])
+            ->assertJsonMissing(['id' => 901])
+            ->assertJsonMissing(['id' => 902]);
+
+        $this->assertCount(1, $this->jsonList($response, 'gare'));
+    }
+
+    /* ─── C5: da novembre si carica anche l'anno successivo ── */
+
+    public function test_load_all_competitions_before_november_queries_only_current_year(): void
+    {
+        $this->travelTo(now()->setDate(now()->year, 10, 15));
+        $anno = now()->year;
+
+        $this->fakeFedergolf([
+            'data' => [
+                ['annullata' => 0, 'nome' => 'GARA ANNO CORRENTE', 'data' => $this->futureDate(30), 'competition_id' => 801],
+            ],
+        ]);
+
+        $this->actingAs(User::factory()->create())
+            ->post('/user/federgolf/load-all')
+            ->assertOk()
+            ->assertJsonPath('success', true);
+
+        Http::assertSentCount(1);
+        Http::assertSent(fn (\Illuminate\Http\Client\Request $request) => $request['anno'] === (string) $anno);
+    }
+
+    public function test_load_all_competitions_from_november_merges_next_year(): void
+    {
+        $this->travelTo(now()->setDate(now()->year, 11, 15));
+        $anno = now()->year;
+
+        Http::fake([
+            'www.federgolf.it/*' => Http::sequence()
+                ->push(['data' => [
+                    ['annullata' => 0, 'nome' => 'GARA DI DICEMBRE', 'data' => $this->futureDate(30), 'competition_id' => 811],
+                ]], 200)
+                ->push(['data' => [
+                    ['annullata' => 0, 'nome' => 'GARA DI GENNAIO', 'data' => $this->futureDate(60), 'competition_id' => 812],
+                ]], 200),
+        ]);
+
+        $response = $this->actingAs(User::factory()->create())
+            ->post('/user/federgolf/load-all')
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonFragment(['id' => 811])
+            ->assertJsonFragment(['id' => 812]);
+
+        $this->assertCount(2, $this->jsonList($response, 'gare'));
+        Http::assertSentCount(2);
+        Http::assertSent(fn (\Illuminate\Http\Client\Request $request) => $request['anno'] === (string) $anno);
+        Http::assertSent(fn (\Illuminate\Http\Client\Request $request) => $request['anno'] === (string) ($anno + 1));
+    }
+
+    public function test_load_all_competitions_from_november_keeps_current_year_if_next_fails(): void
+    {
+        $this->travelTo(now()->setDate(now()->year, 11, 15));
+
+        Http::fake([
+            'www.federgolf.it/*' => Http::sequence()
+                ->push(['data' => [
+                    ['annullata' => 0, 'nome' => 'GARA DI DICEMBRE', 'data' => $this->futureDate(30), 'competition_id' => 821],
+                ]], 200)
+                ->push([], 500),
+        ]);
+
+        $response = $this->actingAs(User::factory()->create())
+            ->post('/user/federgolf/load-all')
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonFragment(['id' => 821]);
+
+        $this->assertCount(1, $this->jsonList($response, 'gare'));
+        Http::assertSentCount(2);
+    }
 }

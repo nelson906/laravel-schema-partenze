@@ -394,7 +394,8 @@ class FedergolfController extends Controller
     public function loadAllCompetitions(Request $request): JsonResponse
     {
         try {
-            $annoCorrente = (int) date('Y');
+            // now() e non date(): nei test si può spostare la data (travelTo).
+            $annoCorrente = now()->year;
             $entries = $this->fetchCompetitionsYear($annoCorrente);
 
             if ($entries === null) {
@@ -409,7 +410,7 @@ class FedergolfController extends Controller
             // C5: la ricerca federgolf è per anno solare. Da novembre in poi si
             // preparano le gare di gennaio/febbraio: interroghiamo anche anno+1
             // e uniamo. Se la seconda chiamata fallisce, l'anno corrente basta.
-            if ((int) date('n') >= 11) {
+            if (now()->month >= 11) {
                 $entriesNextYear = $this->fetchCompetitionsYear($annoCorrente + 1);
                 if ($entriesNextYear !== null) {
                     $entries = array_merge($entries, $entriesNextYear);

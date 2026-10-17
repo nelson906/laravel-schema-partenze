@@ -28,7 +28,7 @@ class SsoController extends Controller
             abort(404);
         }
 
-        $ttl    = (int) config('services.sso.ttl', 60);
+        $ttl    = config()->integer('services.sso.ttl', 60);
         $claims = SsoToken::verify($request->string('token')->toString(), $secret, $ttl, time());
         if ($claims === null) {
             abort(403, 'Link di accesso non valido o scaduto: riaprilo da golf-arbitri-clean.');
